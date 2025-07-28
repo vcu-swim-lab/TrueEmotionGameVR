@@ -1,8 +1,5 @@
 {
   "dependencies": {
-<<<<<<< HEAD
-    "com.unity.multiplayer.center": "1.0.0",
-=======
     "com.meta.xr.sdk.core": "77.0.0",
     "com.meta.xr.sdk.interaction.ovr": "77.0.0",
     "com.meta.xr.sdk.movement": "https://github.com/oculus-samples/Unity-Movement.git",
@@ -13,7 +10,6 @@
     "com.unity.recorder": "5.1.2",
     "com.unity.xr.interaction.toolkit": "3.0.7",
     "com.unity.xr.openxr": "1.15.0",
->>>>>>> master
     "com.unity.modules.accessibility": "1.0.0",
     "com.unity.modules.ai": "1.0.0",
     "com.unity.modules.androidjni": "1.0.0",

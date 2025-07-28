@@ -1,7 +1,5 @@
 {
   "dependencies": {
-<<<<<<< HEAD
-=======
     "com.meta.xr.sdk.core": {
       "version": "77.0.0",
       "depth": 0,
@@ -123,7 +121,6 @@
       "dependencies": {},
       "url": "https://packages.unity.com"
     },
->>>>>>> master
     "com.unity.multiplayer.center": {
       "version": "1.0.0",
       "depth": 0,
@@ -132,8 +129,6 @@
         "com.unity.modules.uielements": "1.0.0"
       }
     },
-<<<<<<< HEAD
-=======
     "com.unity.nuget.mono-cecil": {
       "version": "1.11.4",
       "depth": 2,
@@ -261,7 +256,6 @@
       },
       "url": "https://packages.unity.com"
     },
->>>>>>> master
     "com.unity.modules.accessibility": {
       "version": "1.0.0",
       "depth": 0,

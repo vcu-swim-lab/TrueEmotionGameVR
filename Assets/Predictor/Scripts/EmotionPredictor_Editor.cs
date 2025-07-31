@@ -44,7 +44,7 @@ public class EmotionPredictor_Editor : Editor
 
             // TODO: add more models
             obj.GetComponent<EmotionPredictor>().Setup(
-                new[] { new AUDevice(face) },
+                new DeviceReader[] { new AUDevice(face) },
             new ModelAsset[][]{
                 new[] { auModel },
             }//

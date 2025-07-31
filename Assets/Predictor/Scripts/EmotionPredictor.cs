@@ -68,19 +68,24 @@ public enum InputType
 
 #region device
 
-public interface Device
+public abstract class Device
 {
-    (InputType, int, int) InputType { get; }
-    void Write(float[] data);
+    public abstract (InputType, int, int) InputType { get; }
+    public abstract void Write(float[] data);
+
+    public static implicit operator DeviceReader(Device d)
+    {
+        return new DeviceReader(d);
+    }
 }
 
 public class AUDevice : Device
 {
     public AUDevice(OVRFaceExpressions faceExpressions) => this.faceExpressions = faceExpressions;
 
-    public (InputType, int, int) InputType => (global::InputType.FaceAU, 70, 5);
+    public override (InputType, int, int) InputType => (global::InputType.FaceAU, 70, 5);
 
-    public void Write(float[] data)
+    public override void Write(float[] data)
     {
         faceExpressions.CopyTo(data);
     }
@@ -90,9 +95,9 @@ public class AUDevice : Device
 
 public class SoundDevice : Device
 {
-    public (InputType, int, int) InputType => throw new NotImplementedException();
+    public override (InputType, int, int) InputType => throw new NotImplementedException();
 
-    public void Write(float[] data)
+    public override void Write(float[] data)
     {
         throw new NotImplementedException();
     }

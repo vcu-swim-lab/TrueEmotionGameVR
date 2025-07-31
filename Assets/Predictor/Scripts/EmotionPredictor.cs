@@ -1,6 +1,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Collections;
 using System.Linq;
 using Unity.InferenceEngine;
 using UnityEngine;
@@ -64,85 +65,21 @@ public enum InputType
     Count, // metadata
 }
 
-class ModelInput
-{
-    internal ModelInput()
-    {
-        data = new();
-        SetupArray(InputType.FaceAU, 70, 5);
-    }
-
-    internal float[] NextFrame(InputType type)
-    {
-        int len = data[type].Length;
-
-        // If this part is skipped, the new frame overwrites the last one.
-        // We want the frame to be added to the end and push the older frames backwards, so we simply swap move the frames first.
-        /*
-            So think like this:
-            1 2 3 4 5
-                    ^--- cursor here
-            Ok no problem so far. But:
-
-            1 2 3 4 6
-                    ^
-            Oops, the last frame is in the wrong place now. Just swap move the first frame: (6, 2, 3, 4, 5) -> (2, 6, 3, 4, 5) -> (2, 3, 6, 4, 5) -> (2, 3, 4, 6, 5) -> (2, 3, 4, 5, 6)
-        */
-        for (int i = 0; i < len - 1; ++i)
-        {
-            // TODO: does this work?
-            (data[type][i], data[type][i + 1]) = (data[type][i + 1], data[type][i]);
-        }
-
-        return data[type][len - 1];
-    }
-
-    internal Dictionary<InputType, Tensor> Prepare()
-    {
-        Dictionary<InputType, Tensor> tensors = new();
-        foreach (var (k, v) in data)
-        {
-            // flatten the array
-            var flat = v.SelectMany(sub => sub).ToArray();
-            var t = new Tensor<float>(new TensorShape(1, v.Length, v[0].Length), flat);
-
-            tensors.Add(k, t);
-        }
-
-        return tensors;
-    }
-
-    private void SetupArray(InputType type, int w, int h)
-    {
-        data[type] = new float[h][];
-        for (int i = 0; i < h; ++i)
-        {
-            data[type][i] = new float[w];
-        }
-    }
-
-    private readonly Dictionary<InputType, float[][]> data;
-}
-
 
 #region device
 
 public interface Device
 {
-    InputType InputType { get; }
+    (InputType, int, int) InputType { get; }
     void Write(float[] data);
 }
 
 public class AUDevice : Device
 {
-    public AUDevice(OVRFaceExpressions faceExpressions)
-    {
-        this.faceExpressions = faceExpressions;
-    }
+    public AUDevice(OVRFaceExpressions faceExpressions) => this.faceExpressions = faceExpressions;
 
-    public InputType InputType { get => InputType.FaceAU; }
+    public (InputType, int, int) InputType => (global::InputType.FaceAU, 70, 5);
 
-    // TODO: implement
     public void Write(float[] data)
     {
         faceExpressions.CopyTo(data);
@@ -153,7 +90,7 @@ public class AUDevice : Device
 
 public class SoundDevice : Device
 {
-    public InputType InputType { get => InputType.Sound; }
+    public (InputType, int, int) InputType => throw new NotImplementedException();
 
     public void Write(float[] data)
     {
@@ -161,14 +98,66 @@ public class SoundDevice : Device
     }
 }
 
+
+public class DeviceReader
+{
+    public DeviceReader(Device device)
+        : this(device, device.InputType.Item3) { }
+
+    // Frequency is in frames per second, defaults to number of frames the device needs.
+    public DeviceReader(Device device, int frequency)
+    {
+        Step = 1.0f / frequency;
+        this.device = device;
+
+        var (_, w, h) = device.InputType;
+        data = new float[h][];
+        for (int i = 0; i < h; ++i)
+        {
+            data[i] = new float[w];
+        }
+
+        max = h;
+    }
+
+    // dummy API
+    internal void Poll()
+    {
+        index %= max;
+        device.Write(data[index++]);
+    }
+
+    public bool IsReady { get => index == max; }
+
+    public (InputType, Tensor<float>) Data()
+    {
+        var (ty, w, h) = device.InputType;
+        var flat = data.SelectMany(sub => sub).ToArray();
+        return (ty, new(new TensorShape(1, h, w), flat));
+    }
+
+    internal float Step { get; }
+    internal readonly Device device;
+
+    private readonly float[][] data;
+    private int index = 0;
+    private readonly int max;
+}
+
 #endregion
 
 
 public class EmotionPredictor : MonoBehaviour
 {
-    public void Setup(Device[] devices, ModelAsset[][] models)
+    public void Setup(DeviceReader[] readers, ModelAsset[][] models)
     {
-        this.devices = devices;
+        this.readers = readers;
+        nextPollTime = new float[readers.Length];
+
+        for (int i = 0; i < readers.Length; ++i)
+        {
+            nextPollTime[i] = Time.time + readers[i].Step;
+        }
 
         for (int i = 0; i < models.Length; ++i)
         {
@@ -194,18 +183,44 @@ public class EmotionPredictor : MonoBehaviour
 
     public async Awaitable<Emotion> Predict()
     {
-        if (devices.Length == 0)
+        if (readers.Length == 0)
         {
             Debug.LogWarning("No devices attached to EmotionPredictor; prediction will always return `Neutral`. Make sure to call `EmotionPredictor.Listen` before calling `Predict`.");
             return Emotion.Neutral;
         }
 
-        foreach (var device in devices)
+        while (aPredIsWaitingData)
         {
-            device.Write(inputs.NextFrame(device.InputType));
+            await Awaitable.NextFrameAsync();
         }
 
-        var data = inputs.Prepare();
+        aPredIsWaitingData = true;
+
+        bool ready;
+        do
+        {
+            ready = true;
+
+            foreach (var reader in readers)
+            {
+                if (!reader.IsReady)
+                {
+                    await Awaitable.NextFrameAsync();
+                    ready = false;
+                    break;
+                }
+            }
+        } while (!ready);
+
+        aPredIsWaitingData = false;
+
+        Dictionary<InputType, Tensor> data = new();
+        foreach (var reader in readers)
+        {
+            var (ty, tensor) = reader.Data();
+            data[ty] = tensor;
+        }
+
         var pred = Predict(data);
 
         foreach ((_, var tensor) in data)
@@ -262,6 +277,19 @@ public class EmotionPredictor : MonoBehaviour
         return (Emotion)iEmo;
     }
 
+
+    void Update()
+    {
+        for (int i = 0; i < readers.Length; ++i)
+        {
+            if (Time.time >= nextPollTime[i])
+            {
+                readers[i].Poll();
+                nextPollTime[i] += readers[i].Step;
+            }
+        }
+    }
+
     void OnDestroy()
     {
         foreach (var list in entries.Values)
@@ -281,8 +309,10 @@ public class EmotionPredictor : MonoBehaviour
         public Worker worker;
     }
 
-    private Device[] devices;
-    private readonly ModelInput inputs = new();
+    private DeviceReader[] readers;
+    private float[] nextPollTime;
+
+    private bool aPredIsWaitingData = false;
 
     // invariant: if `entries[type]` exists, it has at least 1 entry
     internal readonly Dictionary<InputType, List<Entry>> entries = new();

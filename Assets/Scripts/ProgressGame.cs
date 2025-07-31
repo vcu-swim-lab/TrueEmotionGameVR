@@ -94,12 +94,11 @@ public class ProgressGame : MonoBehaviour
         emotionConfidenceLogs[emotion] = new List<float>();
 
         const int intervalMs = 1000;
-        var startTime = Time.realtimeSinceStartup;
 
         for (int i = 0; i < 10; ++i)
         {
             // Calculate next target time
-            float nextTick = startTime + (i + 1) * (intervalMs / 1000f);
+            float nextTick = Time.time + (intervalMs / 1000f);
 
             // Await prediction
             var allConfidences = await PredictEmotionAsync();
@@ -111,7 +110,7 @@ public class ProgressGame : MonoBehaviour
             }
 
             // Wait for the remaining time until the next 1-second mark
-            float remaining = nextTick - Time.realtimeSinceStartup;
+            float remaining = nextTick - Time.time;
             if (remaining > 0)
             {
                 await Awaitable.WaitForSecondsAsync(remaining);

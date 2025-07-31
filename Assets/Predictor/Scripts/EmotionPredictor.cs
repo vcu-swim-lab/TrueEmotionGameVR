@@ -87,7 +87,8 @@ public class AUDevice : Device
 
     public override void Write(float[] data)
     {
-        faceExpressions.CopyTo(data);
+        if (faceExpressions.ValidExpressions)
+            faceExpressions.CopyTo(data);
     }
 
     private readonly OVRFaceExpressions faceExpressions;
@@ -128,7 +129,7 @@ public class DeviceReader
     // dummy API
     internal void Poll()
     {
-        index %= max;
+        if (index == max) return;
         device.Write(data[index++]);
     }
 
@@ -138,6 +139,7 @@ public class DeviceReader
     {
         var (ty, w, h) = device.InputType;
         var flat = data.SelectMany(sub => sub).ToArray();
+        index = 0;
         return (ty, new(new TensorShape(1, h, w), flat));
     }
 
@@ -219,7 +221,7 @@ public class EmotionPredictor : MonoBehaviour
 
         aPredIsWaitingData = false;
 
-        Dictionary<InputType, Tensor> data = new();
+        Dictionary<InputType, Tensor<float>> data = new();
         foreach (var reader in readers)
         {
             var (ty, tensor) = reader.Data();
@@ -236,7 +238,7 @@ public class EmotionPredictor : MonoBehaviour
         return await pred;
     }
 
-    private async Awaitable<Emotion> Predict(Dictionary<InputType, Tensor> data)
+    private async Awaitable<Emotion> Predict(Dictionary<InputType, Tensor<float>> data)
     {
         int count = 0;
         foreach (var (type, tensor) in data)

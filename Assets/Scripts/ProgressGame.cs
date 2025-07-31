@@ -1,16 +1,20 @@
-using System.Collections;
 using System.Collections.Generic;
-using System.Threading.Tasks;
 
 using UnityEngine;
 using Random = UnityEngine.Random;
 
 using TMPro;
+using Unity.InferenceEngine;
 
 
+[RequireComponent(typeof(EmotionPredictor))]
+[RequireComponent(typeof(OVRFaceExpressions))]
 public class ProgressGame : MonoBehaviour
 {
     private TextMeshProUGUI text;
+    private OVRFaceExpressions faceExpressions;
+    private EmotionPredictor predictor;
+    [SerializeField] private ModelAsset auModel;
 
     // Map emotion name to emoji for display
     private static readonly Dictionary<Emotion, string> emotionToEmoji = new()
@@ -34,6 +38,14 @@ public class ProgressGame : MonoBehaviour
     void Start()
     {
         text = GameObject.Find("Instruction").GetComponent<TextMeshProUGUI>();
+        faceExpressions = GetComponent<OVRFaceExpressions>();
+
+        predictor = GetComponent<EmotionPredictor>();
+        predictor.Setup(
+            new DeviceReader[] { new AUDevice(faceExpressions) },
+            new ModelAsset[][] { new[] { auModel } }
+        );
+
 
         gameTask = RunGame();
     }
@@ -110,19 +122,25 @@ public class ProgressGame : MonoBehaviour
     // Simulated async emotion predictor returning full confidence dictionary
     private async Awaitable<Dictionary<Emotion, float>> PredictEmotionAsync()
     {
-        await Awaitable.NextFrameAsync(); // simulate async
+        // await Awaitable.NextFrameAsync(); // simulate async
 
-        var emotions = new Dictionary<Emotion, float>();
-        foreach (var emo in emotionList)
+        // var emotions = new Dictionary<Emotion, float>();
+        // foreach (var emo in emotionList)
+        // {
+        //     emotions[emo] = Random.Range(0f, 1f);
+        // }
+
+        // // Normalize
+        // float total = 0f;
+        // foreach (var val in emotions.Values) total += val;
+        // foreach (var key in new List<Emotion>(emotions.Keys)) emotions[key] /= total;
+
+        // return emotions;
+
+        var emo = await predictor.Predict();
+        return new Dictionary<Emotion, float>
         {
-            emotions[emo] = Random.Range(0f, 1f);
-        }
-
-        // Normalize
-        float total = 0f;
-        foreach (var val in emotions.Values) total += val;
-        foreach (var key in new List<Emotion>(emotions.Keys)) emotions[key] /= total;
-
-        return emotions;
+            { emo, 1f } // Simulate full confidence for the predicted emotion
+        };
     }
 }

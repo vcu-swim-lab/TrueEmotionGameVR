@@ -281,6 +281,11 @@ public class EmotionPredictor : MonoBehaviour
         var maxProb = output.Max();
         var iEmo = Array.IndexOf(output, maxProb);
 
+        foreach (var outT in outputs)
+        {
+            outT.Dispose();
+        }
+
         return (Emotion)iEmo;
     }
 

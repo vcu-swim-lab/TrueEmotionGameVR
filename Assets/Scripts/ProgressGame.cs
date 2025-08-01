@@ -5,6 +5,7 @@ using Random = UnityEngine.Random;
 
 using TMPro;
 using Unity.InferenceEngine;
+using System.Linq;
 
 
 [RequireComponent(typeof(EmotionPredictor))]
@@ -27,7 +28,7 @@ public class ProgressGame : MonoBehaviour
         { Emotion.Surprise, "😲" },
     };
 
-    private readonly Emotion[] emotionList = System.Enum.GetValues(typeof(Emotion)) as Emotion[];
+    private readonly Emotion[] emotionList = emotionToEmoji.Keys.ToArray();
 
     // Store per-emotion confidence history
     private readonly Dictionary<Emotion, List<float>> emotionConfidenceLogs = new();
@@ -64,12 +65,16 @@ public class ProgressGame : MonoBehaviour
 
         foreach (var emotion in emotionList)
         {
+            print("Emotion: " + emotion);
+
             // Countdown before showing emotion
             for (int j = 3; j >= 0; --j)
             {
                 text.text = $"{j}";
                 await Awaitable.WaitForSecondsAsync(1f);
             }
+
+            print("Ok start now");
 
             // Show emoji for current emotion
             string emoji = emotionToEmoji[emotion];
@@ -86,16 +91,12 @@ public class ProgressGame : MonoBehaviour
     private async Awaitable RunPredictionCoroutine(Emotion emotion)
     {
         print("Prediction started for: " + emotion);
-        await RunPredictionLoop(emotion);
-    }
-
-    private async Awaitable RunPredictionLoop(Emotion emotion)
-    {
         emotionConfidenceLogs[emotion] = new List<float>();
 
         const int intervalMs = 1000;
 
-        for (int i = 0; i < 10; ++i)
+        int times = 10;
+        for (int i = 0; i < times; ++i)
         {
             // Calculate next target time
             float nextTick = Time.time + (intervalMs / 1000f);
@@ -116,6 +117,8 @@ public class ProgressGame : MonoBehaviour
                 await Awaitable.WaitForSecondsAsync(remaining);
             }
         }
+
+        print("Done with predicting " + emotion);
     }
 
     // Simulated async emotion predictor returning full confidence dictionary

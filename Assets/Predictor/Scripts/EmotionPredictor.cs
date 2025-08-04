@@ -28,11 +28,12 @@ internal class Async
 
         for (int i = 0; i < awaitables.Length; ++i)
         {
+            int capturedIndex = i; 
             AwaitAndCount(awaitables[i], onDone: res =>
             {
                 ++completed;
-                results[i] = res;
-
+                results[capturedIndex] = res; 
+                
                 if (completed == total)
                 {
                     completion.SetResult();

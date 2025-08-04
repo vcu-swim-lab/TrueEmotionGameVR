@@ -540,6 +540,8 @@ GameObject:
   - component: {fileID: 964688071}
   - component: {fileID: 964688075}
   - component: {fileID: 964688076}
+  - component: {fileID: 964688078}
+  - component: {fileID: 964688077}
   m_Layer: 7
   m_Name: Canvas
   m_TagString: Untagged
@@ -671,6 +673,30 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   auModel: {fileID: 5022602860645237092, guid: 917c503db293ae746bf61ecfaaf811bd, type: 3}
+--- !u!114 &964688077
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 964688070}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a95044baf65b10c4e89b246d2f881ac9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &964688078
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 964688070}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7ac03dcb67c3ba449a049f63716f7b7c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &1066909192
 GameObject:
   m_ObjectHideFlags: 0
@@ -1220,7 +1246,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: "New Text \U0001F680"
+  m_text: "New Text\U0001F680"
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}

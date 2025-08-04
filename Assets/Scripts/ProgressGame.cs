@@ -65,16 +65,12 @@ public class ProgressGame : MonoBehaviour
 
         foreach (var emotion in emotionList)
         {
-            print("Emotion: " + emotion);
-
             // Countdown before showing emotion
             for (int j = 3; j >= 0; --j)
             {
                 text.text = $"{j}";
                 await Awaitable.WaitForSecondsAsync(1f);
             }
-
-            print("Ok start now");
 
             // Show emoji for current emotion
             string emoji = emotionToEmoji[emotion];
@@ -90,7 +86,6 @@ public class ProgressGame : MonoBehaviour
 
     private async Awaitable RunPredictionCoroutine(Emotion emotion)
     {
-        print("Prediction started for: " + emotion);
         emotionConfidenceLogs[emotion] = new List<float>();
 
         const int intervalMs = 1000;

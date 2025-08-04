@@ -16,6 +16,13 @@ internal class Async
         int completed = 0;
         int total = awaitables.Length;
 
+        // short-circuit
+        if (total == 1)
+        {
+            var res = await awaitables[0];
+            return new[] { res };
+        }
+
         var completion = new AwaitableCompletionSource();
         var results = new T[awaitables.Length];
 

@@ -28,7 +28,7 @@ internal class Async
 
         for (int i = 0; i < awaitables.Length; ++i)
         {
-            _ = AwaitAndCount(awaitables[i], onDone: res =>
+            AwaitAndCount(awaitables[i], onDone: res =>
             {
                 ++completed;
                 results[i] = res;
@@ -44,7 +44,7 @@ internal class Async
         return results;
     }
 
-    internal static async Awaitable AwaitAndCount<T>(Awaitable<T> awaitable, Action<T> onDone)
+    internal static async void AwaitAndCount<T>(Awaitable<T> awaitable, Action<T> onDone)
     {
         var res = await awaitable;
         onDone.Invoke(res);
@@ -140,7 +140,7 @@ public class DeviceReader
         device.Write(data[index++]);
     }
 
-    public bool IsReady { get => index == max; }
+    public bool IsReady => index == max;
 
     public (InputType, Tensor<float>) Data()
     {
@@ -181,7 +181,7 @@ public class EmotionPredictor : MonoBehaviour
                 ++i;
 
                 var model = ModelLoader.Load(modelAsset);
-                var worker = new Worker(model, BackendType.CPU);
+                var worker = new Worker(model, BackendType.GPUCompute);
 
                 entries.TryAdd(type, new());
 
@@ -203,6 +203,7 @@ public class EmotionPredictor : MonoBehaviour
             return Emotion.Neutral;
         }
 
+        // aPredIsWaitingData checks if another prediction is waiting for data to be ready
         while (aPredIsWaitingData)
         {
             await Awaitable.NextFrameAsync();
@@ -210,6 +211,8 @@ public class EmotionPredictor : MonoBehaviour
 
         aPredIsWaitingData = true;
 
+        // Wait until all readers are ready
+        // This is to ensure that all data is collected before making a prediction
         bool ready;
         do
         {

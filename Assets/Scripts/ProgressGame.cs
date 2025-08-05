@@ -10,14 +10,14 @@ using UnityEngine.UI;
 
 
 [RequireComponent(typeof(EmotionPredictor))]
-[RequireComponent(typeof(OVRFaceExpressions))]
+// [RequireComponent(typeof(OVRFaceExpressions))]
 public class ProgressGame : MonoBehaviour
 {
     private TextMeshProUGUI text;
-    private TextMeshProUGUI debug;
+    // private TextMeshProUGUI debug;
     private Button restart;
 
-    private OVRFaceExpressions faceExpressions;
+    // private OVRFaceExpressions faceExpressions;
     private EmotionPredictor predictor;
     [SerializeField] private ModelAsset auModel;
 
@@ -45,13 +45,13 @@ public class ProgressGame : MonoBehaviour
         // debug = GameObject.Find("Debug").GetComponent<TextMeshProUGUI>();
         restart = GameObject.Find("Restart").GetComponent<Button>();
 
-        faceExpressions = GetComponent<OVRFaceExpressions>();
+        // faceExpressions = GetComponent<OVRFaceExpressions>();
 
         predictor = GetComponent<EmotionPredictor>();
-        predictor.Setup(
-            new DeviceReader[] { new AUDevice(faceExpressions) },
-            new ModelAsset[][] { new[] { auModel } }
-        );
+        // predictor.Setup(
+        //     new DeviceReader[] { new AUDevice(faceExpressions) },
+        //     new ModelAsset[][] { new[] { auModel } }
+        // );
         predictor.Polling = false;
 
 
@@ -128,7 +128,7 @@ public class ProgressGame : MonoBehaviour
             if (allConfidences.TryGetValue(emotion, out float confidence))
             {
                 emotionConfidenceLogs[emotion].Add(confidence);
-                debug.text = $"[{emotion}] Prediction {i + 1}: {confidence:F2}";
+                // debug.text = $"[{emotion}] Prediction {i + 1}: {confidence:F2}";
 
                 score += (int)(confidence * 10);
             }

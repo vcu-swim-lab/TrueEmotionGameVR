@@ -1,11 +1,9 @@
 
 using System;
 using System.Collections.Generic;
-using System.Collections;
 using System.Linq;
 using Unity.InferenceEngine;
 using UnityEngine;
-using TMPro;
 
 // TODO: only initialize `ModelInput` entries for specified input types
 
@@ -16,13 +14,6 @@ internal class Async
     {
         int completed = 0;
         int total = awaitables.Length;
-
-        // // short-circuit
-        // if (total == 1)
-        // {
-        //     var res = await awaitables[0];
-        //     return new[] { res };
-        // }
 
         var completion = new AwaitableCompletionSource();
         var results = new T[awaitables.Length];
@@ -96,11 +87,8 @@ public class AUDevice : Device
 
     public override void Write(float[] data)
     {
-        Debug.Log("AU Device Write called");
         if (faceExpressions.ValidExpressions)
         {
-            float[] da = faceExpressions.ToArray();
-            Debug.Log($"Au data: {da}");
             faceExpressions.CopyTo(data);
         }
     }
@@ -143,9 +131,7 @@ public class DeviceReader
     // dummy API
     internal void Poll()
     {
-        Debug.Log("Start Poll");
         if (index == max) return;
-        Debug.Log("Poll called");
         device.Write(data[index++]);
     }
 

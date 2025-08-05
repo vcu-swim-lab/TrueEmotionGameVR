@@ -5,13 +5,24 @@
 // [CustomEditor(typeof(EmotionPredictor))]
 // public class EmotionPredictor_Editor : Editor
 // {
-//     ModelAsset auModel;
+//     private SerializedProperty setupValueProp;
+//     private bool isInit = false;
 
 //     void OnEnable()
 //     {
-//         var pred = (EmotionPredictor)target;
+//         setupValueProp = serializedObject.FindProperty("AU Model");
+//         Debug.Log($"Type of property: {setupValueProp.type}");
+
+//         if (!isInit)
+//         {
+//             doSetup(target, (ModelAsset)setupValueProp.boxedValue);
+
+//             isInit = true;
+//         }
+
+//         // var pred = (EmotionPredictor)target;
 //         // TODO: this is not always true
-//         auModel = pred.entries[InputType.FaceAU][0].asset;
+//         // auModel = pred.entries[InputType.FaceAU][0].asset;
 //     }
 
 //     public override void OnInspectorGUI()
@@ -20,37 +31,38 @@
 
 //         EditorGUI.BeginChangeCheck();
 
-//         auModel = (ModelAsset)EditorGUILayout.ObjectField(
-//             "AU Model",
-//             auModel,
-//             typeof(ModelAsset),
-//             false
-//         );
+//         EditorGUILayout.PropertyField(setupValueProp, new GUIContent("FACS"));
 
 //         var changed = EditorGUI.EndChangeCheck();
 
-//         serializedObject.ApplyModifiedProperties();
 
 //         if (changed)
 //         {
-//             Debug.Assert(auModel != null, "You should specify an AU model for now.");
+//             serializedObject.ApplyModifiedProperties();
 
-//             var obj = ((EmotionPredictor)target).gameObject;
-
-//             if (!obj.TryGetComponent<OVRFaceExpressions>(out var face))
-//             {
-//                 face = obj.AddComponent<OVRFaceExpressions>();
-//             }
-
-//             // TODO: add more models
-//             obj.GetComponent<EmotionPredictor>().Setup(
-//                 new DeviceReader[] { new AUDevice(face) },
-//             new ModelAsset[][]{
-//                 new[] { auModel },
-//             }//
-//             );
+//             doSetup(target, (ModelAsset)setupValueProp.boxedValue);
 
 //             EditorUtility.SetDirty(target);
 //         }
+//     }
+
+//     private static void doSetup(Object target, ModelAsset auModel)
+//     {
+//         var pred = (EmotionPredictor)target;
+//         var obj = pred.gameObject;
+
+//         if (!obj.TryGetComponent<OVRFaceExpressions>(out var face))
+//         {
+//             face = obj.AddComponent<OVRFaceExpressions>();
+//         }
+
+//         face.enabled = true;
+
+//         pred.Setup(
+//             new DeviceReader[] { new AUDevice(face) },
+//             new ModelAsset[][]{
+//                 new []{auModel }
+//             }
+//         );
 //     }
 // }

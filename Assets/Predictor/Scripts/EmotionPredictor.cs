@@ -149,6 +149,11 @@ public class DeviceReader
         device.Write(data[index++]);
     }
 
+    internal void Flush()
+    {
+        index = 0;
+    }
+
     public bool IsReady => index == max;
 
     public (InputType, Tensor<float>) Data()
@@ -309,9 +314,20 @@ public class EmotionPredictor : MonoBehaviour
         return ((Emotion)iEmo, maxProb);
     }
 
+    public void Flush()
+    {
+        foreach (var reader in readers)
+        {
+            reader.Flush();
+        }
+    }
+
+    public bool Polling { get; set; } = true;
 
     void Update()
     {
+        if (!Polling) return;
+
         for (int i = 0; i < readers.Length; ++i)
         {
             if (Time.time >= nextPollTime[i])

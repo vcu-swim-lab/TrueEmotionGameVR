@@ -6,6 +6,7 @@ using Random = UnityEngine.Random;
 using TMPro;
 using Unity.InferenceEngine;
 using System.Linq;
+using UnityEngine.UI;
 
 
 [RequireComponent(typeof(EmotionPredictor))]
@@ -14,6 +15,7 @@ public class ProgressGame : MonoBehaviour
 {
     private TextMeshProUGUI text;
     private TextMeshProUGUI debug;
+    private Button restart;
 
     private OVRFaceExpressions faceExpressions;
     private EmotionPredictor predictor;
@@ -40,7 +42,8 @@ public class ProgressGame : MonoBehaviour
     void Start()
     {
         text = GameObject.Find("Instruction").GetComponent<TextMeshProUGUI>();
-        debug = GameObject.Find("Debug").GetComponent<TextMeshProUGUI>();
+        // debug = GameObject.Find("Debug").GetComponent<TextMeshProUGUI>();
+        restart = GameObject.Find("Restart").GetComponent<Button>();
 
         faceExpressions = GetComponent<OVRFaceExpressions>();
 
@@ -49,6 +52,7 @@ public class ProgressGame : MonoBehaviour
             new DeviceReader[] { new AUDevice(faceExpressions) },
             new ModelAsset[][] { new[] { auModel } }
         );
+        predictor.Polling = false;
 
 
         RunGame();
@@ -56,6 +60,7 @@ public class ProgressGame : MonoBehaviour
 
     private async void RunGame()
     {
+        restart.gameObject.SetActive(false);
         int score = 0;
 
         // Shuffle emotion list
@@ -83,14 +88,28 @@ public class ProgressGame : MonoBehaviour
 
             // Run prediction loop for this emotion
             score += await RunPredictionCoroutine(emotion);
+
+            // debug.text = "Prediction complete for " + emotion;
         }
 
         text.text = $"Thanks for playing! Score: {score}";
         Debug.Log("All emotion predictions collected.");
+
+        restart.gameObject.SetActive(true);
+
+        restart.onClick.AddListener(() =>
+        {
+            // Reset the game
+            emotionConfidenceLogs.Clear();
+            RunGame();
+        });
     }
 
     private async Awaitable<int> RunPredictionCoroutine(Emotion emotion)
     {
+        predictor.Flush(); // Ensure we start with fresh data
+        predictor.Polling = true;
+
         int score = 0;
 
         emotionConfidenceLogs[emotion] = new List<float>();
@@ -124,6 +143,9 @@ public class ProgressGame : MonoBehaviour
         }
 
         print("Done with predicting " + emotion);
+
+        predictor.Polling = false;
+
         return score;
     }
 

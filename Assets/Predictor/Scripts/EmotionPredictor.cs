@@ -5,6 +5,7 @@ using System.Collections;
 using System.Linq;
 using Unity.InferenceEngine;
 using UnityEngine;
+using TMPro;
 
 // TODO: only initialize `ModelInput` entries for specified input types
 
@@ -16,24 +17,24 @@ internal class Async
         int completed = 0;
         int total = awaitables.Length;
 
-        // short-circuit
-        if (total == 1)
-        {
-            var res = await awaitables[0];
-            return new[] { res };
-        }
+        // // short-circuit
+        // if (total == 1)
+        // {
+        //     var res = await awaitables[0];
+        //     return new[] { res };
+        // }
 
         var completion = new AwaitableCompletionSource();
         var results = new T[awaitables.Length];
 
         for (int i = 0; i < awaitables.Length; ++i)
         {
-            int capturedIndex = i; 
+            int capturedIndex = i;
             AwaitAndCount(awaitables[i], onDone: res =>
             {
                 ++completed;
-                results[capturedIndex] = res; 
-                
+                results[capturedIndex] = res;
+
                 if (completed == total)
                 {
                     completion.SetResult();
@@ -95,8 +96,13 @@ public class AUDevice : Device
 
     public override void Write(float[] data)
     {
+        Debug.Log("AU Device Write called");
         if (faceExpressions.ValidExpressions)
+        {
+            float[] da = faceExpressions.ToArray();
+            Debug.Log($"Au data: {da}");
             faceExpressions.CopyTo(data);
+        }
     }
 
     private readonly OVRFaceExpressions faceExpressions;
@@ -137,7 +143,9 @@ public class DeviceReader
     // dummy API
     internal void Poll()
     {
+        Debug.Log("Start Poll");
         if (index == max) return;
+        Debug.Log("Poll called");
         device.Write(data[index++]);
     }
 
@@ -164,8 +172,12 @@ public class DeviceReader
 
 public class EmotionPredictor : MonoBehaviour
 {
-    public void Setup(DeviceReader[] readers, ModelAsset[][] models)
+    internal TextMeshProUGUI debug;
+    private int dbgCount = 0;
+
+    public void Setup(TextMeshProUGUI debug, DeviceReader[] readers, ModelAsset[][] models)
     {
+        this.debug = debug;
         this.readers = readers;
         nextPollTime = new float[readers.Length];
 
@@ -296,6 +308,8 @@ public class EmotionPredictor : MonoBehaviour
         {
             outT.Dispose();
         }
+
+        debug.text = $"[{dbgCount++}] Predicted: {((Emotion)iEmo).ToString()} with confidence {maxProb:F2}";
 
         return (Emotion)iEmo;
     }

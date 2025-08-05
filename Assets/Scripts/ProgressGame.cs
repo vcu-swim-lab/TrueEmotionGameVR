@@ -43,6 +43,7 @@ public class ProgressGame : MonoBehaviour
 
         predictor = GetComponent<EmotionPredictor>();
         predictor.Setup(
+            GameObject.Find("Debug").GetComponent<TextMeshProUGUI>(),
             new DeviceReader[] { new AUDevice(faceExpressions) },
             new ModelAsset[][] { new[] { auModel } }
         );
@@ -80,7 +81,8 @@ public class ProgressGame : MonoBehaviour
             await RunPredictionCoroutine(emotion);
         }
 
-        text.text = "Thanks for playing!";
+        text.text = "Thanks for playing! Score :";
+
         Debug.Log("All emotion predictions collected.");
     }
 

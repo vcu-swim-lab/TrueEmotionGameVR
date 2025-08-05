@@ -172,12 +172,8 @@ public class DeviceReader
 
 public class EmotionPredictor : MonoBehaviour
 {
-    internal TextMeshProUGUI debug;
-    private int dbgCount = 0;
-
-    public void Setup(TextMeshProUGUI debug, DeviceReader[] readers, ModelAsset[][] models)
+    public void Setup(DeviceReader[] readers, ModelAsset[][] models)
     {
-        this.debug = debug;
         this.readers = readers;
         nextPollTime = new float[readers.Length];
 
@@ -208,12 +204,12 @@ public class EmotionPredictor : MonoBehaviour
         }
     }
 
-    public async Awaitable<Emotion> Predict()
+    public async Awaitable<(Emotion, float)> Predict()
     {
         if (readers.Length == 0)
         {
             Debug.LogWarning("No devices attached to EmotionPredictor; prediction will always return `Neutral`. Make sure to call `EmotionPredictor.Listen` before calling `Predict`.");
-            return Emotion.Neutral;
+            return (Emotion.Neutral, 1f);
         }
 
         // aPredIsWaitingData checks if another prediction is waiting for data to be ready
@@ -261,7 +257,7 @@ public class EmotionPredictor : MonoBehaviour
         return await pred;
     }
 
-    private async Awaitable<Emotion> Predict(Dictionary<InputType, Tensor<float>> data)
+    private async Awaitable<(Emotion, float)> Predict(Dictionary<InputType, Tensor<float>> data)
     {
         int count = 0;
         foreach (var (type, tensor) in data)
@@ -309,9 +305,8 @@ public class EmotionPredictor : MonoBehaviour
             outT.Dispose();
         }
 
-        debug.text = $"[{dbgCount++}] Predicted: {((Emotion)iEmo).ToString()} with confidence {maxProb:F2}";
 
-        return (Emotion)iEmo;
+        return ((Emotion)iEmo, maxProb);
     }
 
 

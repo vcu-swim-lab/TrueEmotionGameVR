@@ -13,6 +13,8 @@ using System.Linq;
 public class ProgressGame : MonoBehaviour
 {
     private TextMeshProUGUI text;
+    private TextMeshProUGUI debug;
+
     private OVRFaceExpressions faceExpressions;
     private EmotionPredictor predictor;
     [SerializeField] private ModelAsset auModel;
@@ -33,27 +35,29 @@ public class ProgressGame : MonoBehaviour
     // Store per-emotion confidence history
     private readonly Dictionary<Emotion, List<float>> emotionConfidenceLogs = new();
 
-    private Awaitable gameTask;
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
         text = GameObject.Find("Instruction").GetComponent<TextMeshProUGUI>();
+        debug = GameObject.Find("Debug").GetComponent<TextMeshProUGUI>();
+
         faceExpressions = GetComponent<OVRFaceExpressions>();
 
         predictor = GetComponent<EmotionPredictor>();
         predictor.Setup(
-            GameObject.Find("Debug").GetComponent<TextMeshProUGUI>(),
             new DeviceReader[] { new AUDevice(faceExpressions) },
             new ModelAsset[][] { new[] { auModel } }
         );
 
 
-        gameTask = RunGame();
+        RunGame();
     }
 
-    private async Awaitable RunGame()
+    private async void RunGame()
     {
+        int score = 0;
+
         // Shuffle emotion list
         for (int i = emotionList.Length - 1; i > 0; --i)
         {
@@ -78,16 +82,17 @@ public class ProgressGame : MonoBehaviour
             text.text = emoji;
 
             // Run prediction loop for this emotion
-            await RunPredictionCoroutine(emotion);
+            score += await RunPredictionCoroutine(emotion);
         }
 
-        text.text = "Thanks for playing! Score :";
-
+        text.text = $"Thanks for playing! Score: {score}";
         Debug.Log("All emotion predictions collected.");
     }
 
-    private async Awaitable RunPredictionCoroutine(Emotion emotion)
+    private async Awaitable<int> RunPredictionCoroutine(Emotion emotion)
     {
+        int score = 0;
+
         emotionConfidenceLogs[emotion] = new List<float>();
 
         const int intervalMs = 1000;
@@ -104,8 +109,11 @@ public class ProgressGame : MonoBehaviour
             if (allConfidences.TryGetValue(emotion, out float confidence))
             {
                 emotionConfidenceLogs[emotion].Add(confidence);
-                Debug.Log($"[{emotion}] Prediction {i + 1}: {confidence:F2}");
+                debug.text = $"[{emotion}] Prediction {i + 1}: {confidence:F2}";
+
+                score += (int)(confidence * 10);
             }
+
 
             // Wait for the remaining time until the next 1-second mark
             float remaining = nextTick - Time.time;
@@ -116,6 +124,7 @@ public class ProgressGame : MonoBehaviour
         }
 
         print("Done with predicting " + emotion);
+        return score;
     }
 
     // Simulated async emotion predictor returning full confidence dictionary
@@ -139,7 +148,7 @@ public class ProgressGame : MonoBehaviour
         var emo = await predictor.Predict();
         return new Dictionary<Emotion, float>
         {
-            { emo, 1f } // Simulate full confidence for the predicted emotion
+            { emo.Item1, emo.Item2 } // Simulate full confidence for the predicted emotion
         };
     }
 }

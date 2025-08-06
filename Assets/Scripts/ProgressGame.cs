@@ -61,7 +61,6 @@ public class ProgressGame : MonoBehaviour
     private async void RunGame()
     {
         restart.gameObject.SetActive(false);
-        int score = 0;
 
         // Shuffle emotion list
         for (int i = emotionList.Length - 1; i > 0; --i)
@@ -72,6 +71,8 @@ public class ProgressGame : MonoBehaviour
 
         text.text = "You got 10s to act each emotion shown to you. Good luck.";
         await Awaitable.WaitForSecondsAsync(2f);
+
+        Dictionary<Emotion, int> score = new();
 
         foreach (var emotion in emotionList)
         {
@@ -87,12 +88,14 @@ public class ProgressGame : MonoBehaviour
             text.text = emoji;
 
             // Run prediction loop for this emotion
-            score += await RunPredictionCoroutine(emotion);
+            int this_score = await RunPredictionCoroutine(emotion);
+            score[emotion] = this_score;
 
-            // debug.text = "Prediction complete for " + emotion;
+            text.text = $"Score: {this_score}";
+            await Awaitable.WaitForSecondsAsync(1f);
         }
 
-        text.text = $"Thanks for playing! Score: {score}";
+        text.text = "Thanks for playing!";
         Debug.Log("All emotion predictions collected.");
 
         restart.gameObject.SetActive(true);
@@ -130,7 +133,7 @@ public class ProgressGame : MonoBehaviour
                 emotionConfidenceLogs[emotion].Add(confidence);
                 // debug.text = $"[{emotion}] Prediction {i + 1}: {confidence:F2}";
 
-                score += (int)(confidence * 10);
+                score++;
             }
 
 

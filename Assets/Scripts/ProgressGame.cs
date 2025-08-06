@@ -34,10 +34,6 @@ public class ProgressGame : MonoBehaviour
 
     private readonly Emotion[] emotionList = emotionToEmoji.Keys.ToArray();
 
-    // Store per-emotion confidence history
-    private readonly Dictionary<Emotion, List<float>> emotionConfidenceLogs = new();
-
-
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
@@ -60,6 +56,7 @@ public class ProgressGame : MonoBehaviour
 
     private async void RunGame()
     {
+        text.fontSize = 36;
         restart.gameObject.SetActive(false);
 
         // Shuffle emotion list
@@ -85,25 +82,27 @@ public class ProgressGame : MonoBehaviour
 
             // Show emoji for current emotion
             string emoji = emotionToEmoji[emotion];
-            text.text = emoji;
+            text.text = $"{emoji}\n{emotion}";
 
             // Run prediction loop for this emotion
             int this_score = await RunPredictionCoroutine(emotion);
             score[emotion] = this_score;
 
-            text.text = $"Score: {this_score}";
+            text.text = $"Score: {this_score}/10";
             await Awaitable.WaitForSecondsAsync(1f);
         }
 
-        text.text = "Thanks for playing!";
-        Debug.Log("All emotion predictions collected.");
-
         restart.gameObject.SetActive(true);
+
+        text.text = "Thanks for playing!"+"\n\n" +
+                    "Scores:\n" +
+                    string.Join("\n", score.Select(kv => $"{kv.Key}: {kv.Value}/10")) + "\n\n";
+        text.fontSize = 24;
+        Debug.Log("All emotion predictions collected.");
 
         restart.onClick.AddListener(() =>
         {
             // Reset the game
-            emotionConfidenceLogs.Clear();
             RunGame();
         });
     }
@@ -115,11 +114,9 @@ public class ProgressGame : MonoBehaviour
 
         int score = 0;
 
-        emotionConfidenceLogs[emotion] = new List<float>();
-
         const int intervalMs = 1000;
 
-        int times = 10;
+        int times = 2;
         for (int i = 0; i < times; ++i)
         {
             // Calculate next target time
@@ -130,9 +127,7 @@ public class ProgressGame : MonoBehaviour
 
             if (allConfidences.TryGetValue(emotion, out float confidence))
             {
-                emotionConfidenceLogs[emotion].Add(confidence);
                 // debug.text = $"[{emotion}] Prediction {i + 1}: {confidence:F2}";
-
                 score++;
             }
 

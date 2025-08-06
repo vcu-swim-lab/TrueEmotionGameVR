@@ -6,4 +6,6 @@ public class PredictorConfig : ScriptableObject
 {
     [SerializeField]
     internal ModelAsset auModel;
+    [SerializeField]
+    internal bool pollByDefault = false;
 }

@@ -173,6 +173,7 @@ public class EmotionPredictor : MonoBehaviour
         var models = new ModelAsset[][] { new[] { config.auModel } };
 
         Setup(readers, models);
+        Polling = config.pollByDefault;
     }
 
     void Setup(DeviceReader[] readers, ModelAsset[][] models)

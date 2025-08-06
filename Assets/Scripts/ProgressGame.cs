@@ -17,9 +17,9 @@ public class ProgressGame : MonoBehaviour
     // private TextMeshProUGUI debug;
     private Button restart;
 
-    private OVRFaceExpressions faceExpressions;
+    // private OVRFaceExpressions faceExpressions;
     private EmotionPredictor predictor;
-    [SerializeField] private ModelAsset auModel;
+    // [SerializeField] private ModelAsset auModel;
 
     // Map emotion name to emoji for display
     private static readonly Dictionary<Emotion, string> emotionToEmoji = new()
@@ -45,13 +45,13 @@ public class ProgressGame : MonoBehaviour
         // debug = GameObject.Find("Debug").GetComponent<TextMeshProUGUI>();
         restart = GameObject.Find("Restart").GetComponent<Button>();
 
-        faceExpressions = GetComponent<OVRFaceExpressions>();
+        // faceExpressions = GetComponent<OVRFaceExpressions>();
 
         predictor = GetComponent<EmotionPredictor>();
-        predictor.Setup(
-            new DeviceReader[] { new AUDevice(faceExpressions) },
-            new ModelAsset[][] { new[] { auModel } }
-        );
+        // predictor.Setup(
+        //     new DeviceReader[] { new AUDevice(faceExpressions) },
+        //     new ModelAsset[][] { new[] { auModel } }
+        // );
         predictor.Polling = false;
 
 

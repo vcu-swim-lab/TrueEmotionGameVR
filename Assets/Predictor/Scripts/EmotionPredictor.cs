@@ -163,7 +163,19 @@ public class DeviceReader
 
 public class EmotionPredictor : MonoBehaviour
 {
-    public void Setup(DeviceReader[] readers, ModelAsset[][] models)
+    [SerializeField]
+    private PredictorConfig config;
+
+    void Start()
+    {
+        var face = gameObject.GetComponentInParent<OVRFaceExpressions>();
+        var readers = new DeviceReader[] { new AUDevice(face) };
+        var models = new ModelAsset[][] { new[] { config.auModel } };
+
+        Setup(readers, models);
+    }
+
+    void Setup(DeviceReader[] readers, ModelAsset[][] models)
     {
         this.readers = readers;
         nextPollTime = new float[readers.Length];
@@ -255,7 +267,7 @@ public class EmotionPredictor : MonoBehaviour
         {
             if (!entries.ContainsKey(type))
             {
-                Debug.LogWarningFormat("Data from {} is passed for prediction but no model that supports this data was registered.", type);
+                Debug.LogWarning($"Data from {type} is passed for prediction but no model that supports this data was registered.");
             }
             else
             {

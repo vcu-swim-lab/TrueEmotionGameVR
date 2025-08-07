@@ -17,9 +17,7 @@ public class ProgressGame : MonoBehaviour
     // private TextMeshProUGUI debug;
     private Button restart;
 
-    // private OVRFaceExpressions faceExpressions;
     private EmotionPredictor predictor;
-    // [SerializeField] private ModelAsset auModel;
 
     // Map emotion name to emoji for display
     private static readonly Dictionary<Emotion, string> emotionToEmoji = new()
@@ -41,15 +39,9 @@ public class ProgressGame : MonoBehaviour
         // debug = GameObject.Find("Debug").GetComponent<TextMeshProUGUI>();
         restart = GameObject.Find("Restart").GetComponent<Button>();
 
-        // faceExpressions = GetComponent<OVRFaceExpressions>();
 
         predictor = GetComponent<EmotionPredictor>();
-        // predictor.Setup(
-        //     new DeviceReader[] { new AUDevice(faceExpressions) },
-        //     new ModelAsset[][] { new[] { auModel } }
-        // );
         predictor.Polling = false;
-
 
         RunGame();
     }
@@ -94,17 +86,11 @@ public class ProgressGame : MonoBehaviour
 
         restart.gameObject.SetActive(true);
 
-        text.text = "Thanks for playing!"+"\n\n" +
+        text.text = "Thanks for playing!" + "\n\n" +
                     "Scores:\n" +
                     string.Join("\n", score.Select(kv => $"{kv.Key}: {kv.Value}/10")) + "\n\n";
         text.fontSize = 24;
         Debug.Log("All emotion predictions collected.");
-
-        restart.onClick.AddListener(() =>
-        {
-            // Reset the game
-            RunGame();
-        });
     }
 
     private async Awaitable<int> RunPredictionCoroutine(Emotion emotion)

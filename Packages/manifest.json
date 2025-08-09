@@ -10,6 +10,7 @@
     "com.unity.recorder": "5.1.2",
     "com.unity.xr.interaction.toolkit": "3.0.7",
     "com.unity.xr.openxr": "1.15.0",
+    "com.vcu-swim-lab.vr-emotion-detection": "https://github.com/vcu-swim-lab/VREmotionDetection.git",
     "com.unity.modules.accessibility": "1.0.0",
     "com.unity.modules.ai": "1.0.0",
     "com.unity.modules.androidjni": "1.0.0",

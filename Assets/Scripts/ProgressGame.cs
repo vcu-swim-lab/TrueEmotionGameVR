@@ -7,6 +7,7 @@ using TMPro;
 using Unity.InferenceEngine;
 using System.Linq;
 using UnityEngine.UI;
+using Oculus.Interaction;
 
 
 [RequireComponent(typeof(EmotionPredictor))]
@@ -32,7 +33,20 @@ public class ProgressGame : MonoBehaviour
 
     private readonly Emotion[] emotionList = emotionToEmoji.Keys.ToArray();
 
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
+
+    void OnEnable()
+    {
+        // var pokeable = restart.GetComponent<PokeInteractable>();
+        // pokeable.WhenPointerEventRaised += OnPointerEvent;
+    }
+
+    void OnDisable()
+    {
+        // var pokeable = restart.GetComponent<PokeInteractable>();
+        // pokeable.WhenPointerEventRaised -= OnPointerEvent;
+    }
+
+
     void Start()
     {
         text = GameObject.Find("Instruction").GetComponent<TextMeshProUGUI>();
@@ -43,54 +57,70 @@ public class ProgressGame : MonoBehaviour
         predictor = GetComponent<EmotionPredictor>();
         predictor.Polling = false;
 
+        restart.onClick.AddListener(() => RunGame());
+
         RunGame();
     }
 
+
     private async void RunGame()
     {
-        text.fontSize = 36;
-        restart.gameObject.SetActive(false);
-
-        // Shuffle emotion list
-        for (int i = emotionList.Length - 1; i > 0; --i)
+        // TODO: change to 
+        while (true)
         {
-            int j = Random.Range(0, i + 1);
-            (emotionList[i], emotionList[j]) = (emotionList[j], emotionList[i]);
-        }
+            text.fontSize = 36;
+            restart.gameObject.SetActive(false);
 
-        text.text = "You got 10s to act each emotion shown to you. Good luck.";
-        await Awaitable.WaitForSecondsAsync(2f);
-
-        Dictionary<Emotion, int> score = new();
-
-        foreach (var emotion in emotionList)
-        {
-            // Countdown before showing emotion
-            for (int j = 3; j >= 0; --j)
+            // Shuffle emotion list
+            for (int i = emotionList.Length - 1; i > 0; --i)
             {
-                text.text = $"{j}";
+                int j = Random.Range(0, i + 1);
+                (emotionList[i], emotionList[j]) = (emotionList[j], emotionList[i]);
+            }
+
+            text.text = "You got 10s to act each emotion shown to you. Good luck.";
+            await Awaitable.WaitForSecondsAsync(2f);
+
+            Dictionary<Emotion, int> score = new();
+
+            foreach (var emotion in emotionList)
+            {
+                // Countdown before showing emotion
+                for (int j = 3; j >= 0; --j)
+                {
+                    text.text = $"{j}";
+                    await Awaitable.WaitForSecondsAsync(1f);
+                }
+
+                // Show emoji for current emotion
+                string emoji = emotionToEmoji[emotion];
+                text.text = $"{emoji}\n{emotion}";
+
+                // Run prediction loop for this emotion
+                int this_score = await RunPredictionCoroutine(emotion);
+                score[emotion] = this_score;
+
+                text.text = $"Score: {this_score}/10";
                 await Awaitable.WaitForSecondsAsync(1f);
             }
 
-            // Show emoji for current emotion
-            string emoji = emotionToEmoji[emotion];
-            text.text = $"{emoji}\n{emotion}";
+            restart.gameObject.SetActive(true);
 
-            // Run prediction loop for this emotion
-            int this_score = await RunPredictionCoroutine(emotion);
-            score[emotion] = this_score;
+            text.text = "Thanks for playing!" + "\n\n" +
+                        "Scores:\n" +
+                        string.Join("\n", score.Select(kv => $"{kv.Key}: {kv.Value}/10")) + "\n\n" +
+                        "Smile to restart";
+            text.fontSize = 24;
+            Debug.Log("All emotion predictions collected.");
 
-            text.text = $"Score: {this_score}/10";
-            await Awaitable.WaitForSecondsAsync(1f);
+            while (true)
+            {
+                var pred = await predictor.Predict();
+
+                if (pred.Item1 == Emotion.Happiness) break;
+                else await Awaitable.WaitForSecondsAsync(.5f);
+            }
         }
-
-        restart.gameObject.SetActive(true);
-
-        text.text = "Thanks for playing!" + "\n\n" +
-                    "Scores:\n" +
-                    string.Join("\n", score.Select(kv => $"{kv.Key}: {kv.Value}/10")) + "\n\n";
-        text.fontSize = 24;
-        Debug.Log("All emotion predictions collected.");
     }
 
     private async Awaitable<int> RunPredictionCoroutine(Emotion emotion)
@@ -156,5 +186,15 @@ public class ProgressGame : MonoBehaviour
         {
             { emo.Item1, emo.Item2 } // Simulate full confidence for the predicted emotion
         };
+    }
+
+    private void OnPointerEvent(PointerEvent pointerEvent)
+    {
+        switch (pointerEvent.Type)
+        {
+            case PointerEventType.Unselect:
+                RunGame();
+                break;
+        }
     }
 }

@@ -256,6 +256,17 @@
       },
       "url": "https://packages.unity.com"
     },
+    "com.vcu-swim-lab.vr-emotion-detection": {
+      "version": "https://github.com/vcu-swim-lab/VREmotionDetection.git",
+      "depth": 0,
+      "source": "git",
+      "dependencies": {
+        "com.unity.ai.inference": "2.2.1",
+        "com.meta.xr.sdk.core": "77.0.0",
+        "com.unity.xr.openxr": "1.15.0"
+      },
+      "hash": "8ebca142020b865e60fcb9c6adc6a4b5a9b6bfc0"
+    },
     "com.unity.modules.accessibility": {
       "version": "1.0.0",
       "depth": 0,

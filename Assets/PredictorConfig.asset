@@ -9,8 +9,8 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 0e8059f223885244b9d6247504fde9ac, type: 3}
+  m_Script: {fileID: 11500000, guid: c93344fd094fb864fa687e0a1a1c999f, type: 3}
   m_Name: PredictorConfig
   m_EditorClassIdentifier: 
-  auModel: {fileID: 5022602860645237092, guid: 283e0137151bf3e40addbe4b1ada0249, type: 3}
+  auModel: {fileID: 5022602860645237092, guid: 917c503db293ae746bf61ecfaaf811bd, type: 3}
   pollByDefault: 0

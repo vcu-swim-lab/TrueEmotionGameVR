@@ -55,7 +55,6 @@ public class ProgressGame : MonoBehaviour
 
 
         predictor = GetComponent<EmotionPredictor>();
-        predictor.Polling = false;
 
         restart.onClick.AddListener(() => RunGame());
 

@@ -126,7 +126,11 @@ public class ProgressGame : MonoBehaviour
 
         const int intervalMs = 1000;
 
+#if UNITY_EDITOR
         int times = 2;
+#else
+        int times = 10;
+#endif
         for (int i = 0; i < times; ++i)
         {
             // Calculate next target time

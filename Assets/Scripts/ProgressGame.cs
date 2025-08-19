@@ -1,13 +1,11 @@
 using System.Collections.Generic;
-
-using UnityEngine;
-using Random = UnityEngine.Random;
+using System.Linq;
 
 using TMPro;
 using Unity.InferenceEngine;
-using System.Linq;
-using UnityEngine.UI;
-using Oculus.Interaction;
+using UnityEngine;
+using UnityEngine.Android;
+using Random = UnityEngine.Random;
 
 
 [RequireComponent(typeof(EmotionPredictor))]
@@ -16,9 +14,12 @@ public class ProgressGame : MonoBehaviour
 {
     private TextMeshProUGUI text;
     // private TextMeshProUGUI debug;
-    private Button restart;
+    private TextMeshProUGUI restart;
 
     private EmotionPredictor predictor;
+
+    [SerializeField]
+    private ModelAsset soundModelTemp;
 
     // Map emotion name to emoji for display
     private static readonly Dictionary<Emotion, string> emotionToEmoji = new()
@@ -34,31 +35,27 @@ public class ProgressGame : MonoBehaviour
     private readonly Emotion[] emotionList = emotionToEmoji.Keys.ToArray();
 
 
-    void OnEnable()
-    {
-        // var pokeable = restart.GetComponent<PokeInteractable>();
-        // pokeable.WhenPointerEventRaised += OnPointerEvent;
-    }
-
-    void OnDisable()
-    {
-        // var pokeable = restart.GetComponent<PokeInteractable>();
-        // pokeable.WhenPointerEventRaised -= OnPointerEvent;
-    }
-
-
     void Start()
     {
         text = GameObject.Find("Instruction").GetComponent<TextMeshProUGUI>();
         // debug = GameObject.Find("Debug").GetComponent<TextMeshProUGUI>();
-        restart = GameObject.Find("Restart").GetComponent<Button>();
-
+        restart = GameObject.Find("Restart").GetComponent<TextMeshProUGUI>();
+        restart.text = "Press any button to restart";
 
         predictor = GetComponent<EmotionPredictor>();
 
-        restart.onClick.AddListener(() => RunGame());
-
         RunGame();
+        RunSoundTest();
+    }
+
+    void Update()
+    {
+        OVRInput.Update();
+    }
+
+    void FixedUpdate()
+    {
+        OVRInput.FixedUpdate();
     }
 
 
@@ -107,18 +104,16 @@ public class ProgressGame : MonoBehaviour
 
             text.text = "Thanks for playing!" + "\n\n" +
                         "Scores:\n" +
-                        string.Join("\n", score.Select(kv => $"{kv.Key}: {kv.Value}/10")) + "\n\n" +
-                        "Smile to restart";
+                        string.Join("\n", score.Select(kv => $"{kv.Key}: {kv.Value}/10")) + "\n\n";
             text.fontSize = 24;
             Debug.Log("All emotion predictions collected.");
 
-            while (true)
+            while (!OVRInput.GetDown(OVRInput.Button.Any))
             {
-                var pred = await predictor.Predict();
-
-                if (pred.Item1 == Emotion.Happiness) break;
-                else await Awaitable.WaitForSecondsAsync(.5f);
+                await Awaitable.NextFrameAsync();
             }
+
+            RunGame();
         }
     }
 
@@ -187,13 +182,29 @@ public class ProgressGame : MonoBehaviour
         };
     }
 
-    private void OnPointerEvent(PointerEvent pointerEvent)
+
+    private async void RunSoundTest()
     {
-        switch (pointerEvent.Type)
+        // TODO: move this to the package side
+        if (!Permission.HasUserAuthorizedPermission(Permission.Microphone))
         {
-            case PointerEventType.Unselect:
-                RunGame();
-                break;
+            Permission.RequestUserPermission(Permission.Microphone);
+            print("microphone requested");
         }
+        else
+        {
+            print("already have microphone access");
+        }
+
+        // TODO: you might want to use loop: true instead
+        // var clip = Microphone.Start(null, false, 30, 16100);
+
+        // await Awaitable.WaitForSecondsAsync(31);
+
+        // var data = new float[30 * 16100];
+        // if (!clip.GetData(data, 0)) print("Error reading clip!");
+
+        // var model = ModelLoader.Load(soundModelTemp);
+        // using var worker = new Worker(model, Unity.InferenceEngine.DeviceType.CPU);
     }
 }

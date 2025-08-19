@@ -14,7 +14,6 @@ public class ProgressGame : MonoBehaviour
 {
     private TextMeshProUGUI text;
     // private TextMeshProUGUI debug;
-    private TextMeshProUGUI restart;
 
     private EmotionPredictor predictor;
 
@@ -39,8 +38,6 @@ public class ProgressGame : MonoBehaviour
     {
         text = GameObject.Find("Instruction").GetComponent<TextMeshProUGUI>();
         // debug = GameObject.Find("Debug").GetComponent<TextMeshProUGUI>();
-        restart = GameObject.Find("Restart").GetComponent<TextMeshProUGUI>();
-        restart.text = "Press any button to restart";
 
         predictor = GetComponent<EmotionPredictor>();
 
@@ -64,9 +61,6 @@ public class ProgressGame : MonoBehaviour
         // TODO: change to 
         while (true)
         {
-            text.fontSize = 36;
-            restart.gameObject.SetActive(false);
-
             // Shuffle emotion list
             for (int i = emotionList.Length - 1; i > 0; --i)
             {
@@ -100,12 +94,10 @@ public class ProgressGame : MonoBehaviour
                 await Awaitable.WaitForSecondsAsync(1f);
             }
 
-            restart.gameObject.SetActive(true);
+            text.text = "Thanks for playing! Scores:\n" +
+                        string.Join("\n", score.Select(kv => $"{kv.Key}: {kv.Value}/10")) + "\n\n" +
+                        "Press any button to restart";
 
-            text.text = "Thanks for playing!" + "\n\n" +
-                        "Scores:\n" +
-                        string.Join("\n", score.Select(kv => $"{kv.Key}: {kv.Value}/10")) + "\n\n";
-            text.fontSize = 24;
             Debug.Log("All emotion predictions collected.");
 
             while (!OVRInput.GetDown(OVRInput.Button.Any))

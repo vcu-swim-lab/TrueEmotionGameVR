@@ -82,6 +82,10 @@ public class ProgressGame : MonoBehaviour
                     await Awaitable.WaitForSecondsAsync(1f);
                 }
 
+                //Show what emoji you are on out of total
+                //int n = 0;
+                text.text = $"(n + 1) / 6\n";
+
                 // Show emoji for current emotion
                 string emoji = emotionToEmoji[emotion];
                 text.text = $"{emoji}\n{emotion}";

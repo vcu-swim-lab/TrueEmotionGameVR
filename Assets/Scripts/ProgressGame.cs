@@ -5,6 +5,7 @@ using TMPro;
 using Unity.InferenceEngine;
 using UnityEngine;
 using UnityEngine.Android;
+using UnityEngine.InputSystem.XR.Haptics;
 using Random = UnityEngine.Random;
 
 
@@ -20,6 +21,7 @@ public class ProgressGame : MonoBehaviour
     [SerializeField]
     private ModelAsset soundModelTemp;
 
+
     // Map emotion name to emoji for display
     private static readonly Dictionary<Emotion, string> emotionToEmoji = new()
     {
@@ -32,7 +34,7 @@ public class ProgressGame : MonoBehaviour
     };
 
     private readonly Emotion[] emotionList = emotionToEmoji.Keys.ToArray();
-
+    public ProgressBar progressBar;
 
     void Start()
     {
@@ -40,6 +42,19 @@ public class ProgressGame : MonoBehaviour
         // debug = GameObject.Find("Debug").GetComponent<TextMeshProUGUI>();
 
         predictor = GetComponent<EmotionPredictor>();
+
+        if (progressBar == null)
+        {
+            progressBar = FindObjectOfType<ProgressBar>();
+            if (progressBar != null)
+            {
+                Debug.Log("Found progressBar: " + progressBar.name);
+            }
+            else
+            {
+                Debug.LogError("Could not find ProgressBar component in scene!");
+            }
+        }
 
         RunGame();
         RunSoundTest();
@@ -69,12 +84,24 @@ public class ProgressGame : MonoBehaviour
             }
 
             text.text = "You got 10s to act each emotion shown to you. Good luck.";
+            //hides the progress bar
+            if (progressBar != null)
+                progressBar.SetProgressBarVisible(false);
+
             await Awaitable.WaitForSecondsAsync(2f);
 
             Dictionary<Emotion, int> score = new();
 
-            foreach (var emotion in emotionList)
+            //hides the progress bar
+            if (progressBar != null)
+                progressBar.SetProgressBarVisible(false);
+
+            //number of emotions
+            for (int n = 0; n < (emotionList.Length); ++n)
             {
+                var emotion = emotionList[n];
+                var max = emotionList.Length;
+
                 // Countdown before showing emotion
                 for (int j = 3; j >= 0; --j)
                 {
@@ -88,11 +115,27 @@ public class ProgressGame : MonoBehaviour
 
                 // Show emoji for current emotion
                 string emoji = emotionToEmoji[emotion];
-                text.text = $"{emoji}\n{emotion}";
+                text.text = $"{n + 1} / {max}\n\n\n{emoji}\n{emotion}";
+
+                //progress bar 
+                progressBar.SetMaximum(max);
+                if (progressBar == null)
+                {
+                    Debug.LogError($"progressbar is null");
+                }
+                if (progressBar != null)
+                {
+                    progressBar.SetCurrent(n + 1);
+                    progressBar.SetProgressBarVisible(true);
+                }
 
                 // Run prediction loop for this emotion
                 int this_score = await RunPredictionCoroutine(emotion);
                 score[emotion] = this_score;
+
+                //hides progress bar
+                if (progressBar != null)
+                    progressBar.SetProgressBarVisible(false);
 
                 text.text = $"Score: {this_score}/10";
                 await Awaitable.WaitForSecondsAsync(1f);

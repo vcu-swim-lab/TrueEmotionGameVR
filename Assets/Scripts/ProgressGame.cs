@@ -8,14 +8,13 @@ using UnityEngine.Android;
 using Random = UnityEngine.Random;
 
 
-[RequireComponent(typeof(EmotionPredictor))]
-[RequireComponent(typeof(OVRFaceExpressions))]
+[RequireComponent(typeof(FaceAuModel))]
 public class ProgressGame : MonoBehaviour
 {
     private TextMeshProUGUI text;
     // private TextMeshProUGUI debug;
 
-    private EmotionPredictor predictor;
+    private FaceAuModel auModel;
 
     [SerializeField]
     private ModelAsset soundModelTemp;
@@ -39,10 +38,10 @@ public class ProgressGame : MonoBehaviour
         text = GameObject.Find("Instruction").GetComponent<TextMeshProUGUI>();
         // debug = GameObject.Find("Debug").GetComponent<TextMeshProUGUI>();
 
-        predictor = GetComponent<EmotionPredictor>();
+        auModel = GetComponent<FaceAuModel>();
 
         RunGame();
-        RunSoundTest();
+        // RunSoundTest();
     }
 
     void Update()
@@ -111,9 +110,6 @@ public class ProgressGame : MonoBehaviour
 
     private async Awaitable<int> RunPredictionCoroutine(Emotion emotion)
     {
-        predictor.Flush(); // Ensure we start with fresh data
-        predictor.Polling = true;
-
         int score = 0;
 
         const int intervalMs = 1000;
@@ -148,8 +144,6 @@ public class ProgressGame : MonoBehaviour
 
         print("Done with predicting " + emotion);
 
-        predictor.Polling = false;
-
         return score;
     }
 
@@ -171,7 +165,7 @@ public class ProgressGame : MonoBehaviour
 
         // return emotions;
 
-        var emo = await predictor.Predict();
+        var emo = await auModel.Predict();
         return new Dictionary<Emotion, float>
         {
             { emo.Item1, emo.Item2 } // Simulate full confidence for the predicted emotion
@@ -179,28 +173,28 @@ public class ProgressGame : MonoBehaviour
     }
 
 
-    private async void RunSoundTest()
-    {
-        // TODO: move this to the package side
-        if (!Permission.HasUserAuthorizedPermission(Permission.Microphone))
-        {
-            Permission.RequestUserPermission(Permission.Microphone);
-            print("microphone requested");
-        }
-        else
-        {
-            print("already have microphone access");
-        }
+    // private async void RunSoundTest()
+    // {
+    //     // TODO: move this to the package side
+    //     if (!Permission.HasUserAuthorizedPermission(Permission.Microphone))
+    //     {
+    //         Permission.RequestUserPermission(Permission.Microphone);
+    //         print("microphone requested");
+    //     }
+    //     else
+    //     {
+    //         print("already have microphone access");
+    //     }
 
-        // TODO: you might want to use loop: true instead
-        // var clip = Microphone.Start(null, false, 30, 16100);
+    //     // TODO: you might want to use loop: true instead
+    //     // var clip = Microphone.Start(null, false, 30, 16100);
 
-        // await Awaitable.WaitForSecondsAsync(31);
+    //     // await Awaitable.WaitForSecondsAsync(31);
 
-        // var data = new float[30 * 16100];
-        // if (!clip.GetData(data, 0)) print("Error reading clip!");
+    //     // var data = new float[30 * 16100];
+    //     // if (!clip.GetData(data, 0)) print("Error reading clip!");
 
-        // var model = ModelLoader.Load(soundModelTemp);
-        // using var worker = new Worker(model, Unity.InferenceEngine.DeviceType.CPU);
-    }
+    //     // var model = ModelLoader.Load(soundModelTemp);
+    //     // using var worker = new Worker(model, Unity.InferenceEngine.DeviceType.CPU);
+    // }
 }

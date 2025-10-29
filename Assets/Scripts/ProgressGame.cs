@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -31,14 +32,55 @@ public class ProgressGame : MonoBehaviour
     };
 
     // Map emotion name to scenario to display to user
-    private static readonly Dictionary<Emotion, string> emotionToScenario = new()
+    private static readonly Dictionary<Emotion, ArrayList> emotionToScenario = new()
     {
-        { Emotion.Anger, "You just found out someone pump into your car in the parking lot and did not leave a note." },
-        { Emotion.Disgust, "You saw a plate of spoiled food on the table with maggots crawling on it." },
-        { Emotion.Fear, "You feel a sudden chill as you hear footsteps behind you in a dark alley." },
-        { Emotion.Happiness, "You are watching your favorite band perform live at a concert for the first time." },
-        { Emotion.Sadness, "You just watched a touching movie where the main character separated from their animal best friend." },
-        { Emotion.Surprise, "You found out a childhood friend is coming to visit!" },
+        { Emotion.Anger, new ArrayList()
+            {
+                "You just found out someone pump into your car in the parking lot and did not leave a note.",
+                "You find your favorite book torn apart after your friend borrowed it.",
+                "You talked to a person who was being rude to you for no reason.",
+            }
+        },
+
+        {Emotion.Disgust, new ArrayList()
+            {
+                "You find a moldy sandwich in your bag.",
+                "You see a bug crawling on your food.",
+                "You see a plate of rotten food filled with maggots.",
+            }
+        },
+
+        {Emotion.Fear, new ArrayList()
+            {
+                "You are walking alone at night and hear footsteps behind you.",
+                "You are about to give a speech in front of a large audience.",
+                "You are lost in a dark forest.",
+            }
+        },
+
+        {Emotion.Happiness, new ArrayList()
+            {
+                "You just received a compliment from a stranger.",
+                "You achieved a personal goal you set for yourself.",
+                "You are spending time with your best friends.",
+            }
+        },
+
+        {Emotion.Sadness, new ArrayList()
+            {
+                "You just watched a heartbreaking movie.",
+                "You are reminiscing about a lost loved one.",
+                "You received some disappointing news.",
+            }
+        },
+
+        {Emotion.Surprise, new ArrayList()
+            {
+                "You just found out you your dinner bill was paid by a generous stranger.",
+                "You received an unexpected gift from a friend.",
+                "You walked into a surprise birthday party thrown for you.",
+            }
+        },
     };
 
     private readonly Emotion[] emotionList = emotionToEmoji.Keys.ToArray();
@@ -104,6 +146,19 @@ public class ProgressGame : MonoBehaviour
                 text.text = $"Score: {this_score}/10";
                 await Awaitable.WaitForSecondsAsync(1f);
             }
+
+            //Shuffle scenario emotion list
+            for (int i = scenarioEmotionList.Length - 1; i > 0; --i)
+            {
+                int j = Random.Range(0, i + 1);
+                (scenarioEmotionList[i], scenarioEmotionList[j]) = (scenarioEmotionList[j], scenarioEmotionList[i]);
+                for (int k = emotionToScenario[scenarioEmotionList[i]].Count - 1; k > 0; k--)
+                {
+                    int l = Random.Range(0, k + 1);
+                    (emotionToScenario[scenarioEmotionList[i]][k], emotionToScenario[scenarioEmotionList[i]][l]) = (emotionToScenario[scenarioEmotionList[i]][l], emotionToScenario[scenarioEmotionList[i]][k]);
+                }
+            }
+
             // Scenario round
             text.text = "This is the scenario round. You have 10s to act each scenario shown to you. Good luck.";
             await Awaitable.WaitForSecondsAsync(2f);
@@ -117,7 +172,7 @@ public class ProgressGame : MonoBehaviour
                 }
 
                 // Show scenario for current emotion
-                string scenario = emotionToScenario[emotion];
+                string scenario = emotionToScenario[emotion][0].ToString();
                 text.text = $"{scenario}\n({emotion})";
 
                 // Run prediction loop for this emotion

@@ -1,0 +1,94 @@
+using System.Diagnostics;
+using Unity.InferenceEngine;
+using Unity.Collections;
+using UnityEngine;
+using System.Collections.Generic;
+
+using Debug = UnityEngine.Debug;
+
+[RequireComponent(typeof(DeviceManager))]
+public class EnableAudioToExpression : MonoBehaviour
+{
+    [SerializeField]
+    private ModelAsset voiceModel;
+
+    private Model voiceModelObject;
+
+    private Worker voiceWorker;
+
+    private RingBuffer<float[]> inputBuffer;
+
+    public void Start()
+    {
+        Debug.Assert(voiceModel != null, $"Voice model not assigned in ${GetType().Name}");
+
+        voiceModelObject = ModelLoader.Load(voiceModel);
+        voiceWorker = new Worker(voiceModelObject, BackendType.CPU);
+
+        var deviceManager = GetComponent<DeviceManager>();
+
+        var voiceDevice = deviceManager.Require(InputType.Sound);
+        if (voiceDevice == null)
+        {
+            Debug.LogError("Could not create microphone!");
+        }
+
+        inputBuffer = new(30, () => new float[16000]);
+        inputBuffer.Listen(voiceDevice);
+
+        Debug.Log("SoundModel initialized.");
+    }
+
+    async Awaitable<Tensor<float>> Infer(Tensor<float> input)
+    {
+        voiceWorker.Schedule(input);
+
+        var voiceTensor = await voiceWorker.PeekOutput().ReadbackAndCloneAsync();
+        return voiceTensor as Tensor<float>;
+    }
+
+    // TODO: `Predict` that doesn't wait on new data, just uses whatever is in the buffer.
+
+    public async Awaitable<Tensor<float>> PredictRaw()
+    {
+        inputBuffer.Clear();
+
+        while (!inputBuffer.Full)
+        {
+            await Awaitable.NextFrameAsync();
+        }
+
+        // TODO: should you dispose the tensor?
+        var input = inputBuffer.ToTensor();
+
+        return await Infer(input);
+    }
+
+
+    public async Awaitable<(Emotion, float)> Predict()
+    {
+        var voiceTensor = await PredictRaw();
+        var voiceArr = voiceTensor.AsReadOnlyNativeArray();
+
+        int maxIndex = 0;
+        float maxValue = voiceArr[0];
+        for (int i = 1; i < voiceArr.Length; ++i)
+        {
+            if (voiceArr[i] > maxValue)
+            {
+                maxValue = voiceArr[i];
+                maxIndex = i;
+            }
+        }
+
+        voiceTensor.Dispose();
+
+        return ((Emotion)maxIndex, maxValue);
+    }
+
+
+    public void Dispose()
+    {
+        voiceWorker.Dispose();
+    }
+}

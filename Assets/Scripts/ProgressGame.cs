@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -32,9 +33,9 @@ public class ProgressGame : MonoBehaviour
     };
 
     // Map emotion name to scenario to display to user
-    private static readonly Dictionary<Emotion, ArrayList> emotionToScenario = new()
+    private static readonly Dictionary<Emotion, string[]> emotionToScenario = new()
     {
-        { Emotion.Anger, new ArrayList()
+        { Emotion.Anger, new string[]
             {
                 "You just found out someone pump into your car in the parking lot and did not leave a note.",
                 "You find your favorite book torn apart after your friend borrowed it.",
@@ -42,7 +43,7 @@ public class ProgressGame : MonoBehaviour
             }
         },
 
-        {Emotion.Disgust, new ArrayList()
+        {Emotion.Disgust, new string[]
             {
                 "You find a moldy sandwich in your bag.",
                 "You see a bug crawling on your food.",
@@ -50,7 +51,7 @@ public class ProgressGame : MonoBehaviour
             }
         },
 
-        {Emotion.Fear, new ArrayList()
+        {Emotion.Fear, new string[]
             {
                 "You are walking alone at night and hear footsteps behind you.",
                 "You are about to give a speech in front of a large audience.",
@@ -58,7 +59,7 @@ public class ProgressGame : MonoBehaviour
             }
         },
 
-        {Emotion.Happiness, new ArrayList()
+        {Emotion.Happiness, new string[]
             {
                 "You just received a compliment from a stranger.",
                 "You achieved a personal goal you set for yourself.",
@@ -66,7 +67,7 @@ public class ProgressGame : MonoBehaviour
             }
         },
 
-        {Emotion.Sadness, new ArrayList()
+        {Emotion.Sadness, new string[]
             {
                 "You just watched a heartbreaking movie.",
                 "You are reminiscing about a lost loved one.",
@@ -74,7 +75,7 @@ public class ProgressGame : MonoBehaviour
             }
         },
 
-        {Emotion.Surprise, new ArrayList()
+        {Emotion.Surprise, new string[]
             {
                 "You just found out you your dinner bill was paid by a generous stranger.",
                 "You received an unexpected gift from a friend.",

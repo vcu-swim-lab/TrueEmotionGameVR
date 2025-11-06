@@ -153,7 +153,7 @@ public class ProgressGame : MonoBehaviour
             {
                 int j = Random.Range(0, i + 1);
                 (scenarioEmotionList[i], scenarioEmotionList[j]) = (scenarioEmotionList[j], scenarioEmotionList[i]);
-                for (int k = emotionToScenario[scenarioEmotionList[i]].Count - 1; k > 0; k--)
+                for (int k = emotionToScenario[scenarioEmotionList[i]].Length - 1; k > 0; k--)
                 {
                     int l = Random.Range(0, k + 1);
                     (emotionToScenario[scenarioEmotionList[i]][k], emotionToScenario[scenarioEmotionList[i]][l]) = (emotionToScenario[scenarioEmotionList[i]][l], emotionToScenario[scenarioEmotionList[i]][k]);

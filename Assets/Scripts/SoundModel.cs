@@ -9,12 +9,19 @@ using Debug = UnityEngine.Debug;
 [RequireComponent(typeof(DeviceManager))]
 public class EnableAudioToExpression : MonoBehaviour
 {
+    // logmel
+
     [SerializeField]
     private ModelAsset voiceModel;
 
+    [SerializeField]
+    private ModelAsset logmelVoiceModel;
+
     private Model voiceModelObject;
+    private Model logmelVoiceModelObject;
 
     private Worker voiceWorker;
+    private Worker logmelVoiceWorker;
 
     private RingBuffer<float[]> inputBuffer;
 
@@ -24,6 +31,10 @@ public class EnableAudioToExpression : MonoBehaviour
 
         voiceModelObject = ModelLoader.Load(voiceModel);
         voiceWorker = new Worker(voiceModelObject, BackendType.CPU);
+
+
+        logmelVoiceModelObject = ModelLoader.Load(logmelVoiceModel);
+        logmelVoiceWorker = new Worker(logmelVoiceModelObject, BackendType.CPU);
 
         var deviceManager = GetComponent<DeviceManager>();
 
@@ -41,7 +52,11 @@ public class EnableAudioToExpression : MonoBehaviour
 
     async Awaitable<Tensor<float>> Infer(Tensor<float> input)
     {
-        voiceWorker.Schedule(input);
+        logmelVoiceWorker.Schedule(input);
+
+        var logMelTensor = logmelVoiceWorker.PeekOutput();
+
+        voiceWorker.Schedule(logMelTensor);
 
         var voiceTensor = await voiceWorker.PeekOutput().ReadbackAndCloneAsync();
         return voiceTensor as Tensor<float>;

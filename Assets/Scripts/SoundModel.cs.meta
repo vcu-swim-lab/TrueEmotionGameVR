@@ -1,2 +1,13 @@
 fileFormatVersion: 2
 guid: cbffc8fb1c595f5408575586e3940e4c
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences:
+  - voiceModel: {fileID: 5022602860645237092, guid: 87e25c175a1c9b74e9b2bb3cff73a35c, type: 3}
+  - logmelVoiceModel: {instanceID: 0}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

@@ -11,12 +11,17 @@ using Random = UnityEngine.Random;
 
 
 [RequireComponent(typeof(FaceAuModel))]
+[RequireComponent(typeof(EnableAudioToExpression))]
 public class ProgressGame : MonoBehaviour
 {
     private TextMeshProUGUI text;
     // private TextMeshProUGUI debug;
 
     private FaceAuModel predictor;
+    private EnableAudioToExpression soundModel;
+
+    [SerializeField]
+    private AudioClip audio;
 
     [SerializeField]
     private ModelAsset soundModelTemp;
@@ -94,6 +99,7 @@ public class ProgressGame : MonoBehaviour
         // debug = GameObject.Find("Debug").GetComponent<TextMeshProUGUI>();
 
         predictor = GetComponent<FaceAuModel>();
+        soundModel = GetComponent<EnableAudioToExpression>();
 
         RunGame();
         RunSoundTest();
@@ -287,5 +293,30 @@ public class ProgressGame : MonoBehaviour
 
         // var model = ModelLoader.Load(soundModelTemp);
         // using var worker = new Worker(model, Unity.InferenceEngine.DeviceType.CPU);
+    }
+
+    // Method to predict emotion from an audio file
+    private async Awaitable<(Emotion, float)> PredictFromAudioClip(AudioClip audioClip)
+    {
+        if (audioClip == null)
+        {
+            Debug.LogError("AudioClip is null");
+            return (Emotion.Happiness, 0f);
+        }
+
+        // Convert AudioClip to Tensor<float>
+        const int maxSamples = 30000; //Input size
+        var numSamples = Mathf.Min(audioClip.samples, maxSamples);
+        var data = new float[maxSamples];
+        audioClip.GetData(data, 0);
+
+        //Pass this to predict
+        var audioInput = new Tensor<float>(new TensorShape(1, numSamples), data);
+
+        var result = await soundModel.Predict(audioInput);
+        
+        audioInput.Dispose();
+
+        return result;
     }
 }

@@ -64,25 +64,34 @@ public class EnableAudioToExpression : MonoBehaviour
 
     // TODO: `Predict` that doesn't wait on new data, just uses whatever is in the buffer.
 
-    public async Awaitable<Tensor<float>> PredictRaw()
+    public async Awaitable<Tensor<float>> PredictRaw(Tensor<float> audioInput = null)
     {
-        inputBuffer.Clear();
+        Tensor<float> input;
 
-        while (!inputBuffer.Full)
+        if (audioInput != null)
         {
-            await Awaitable.NextFrameAsync();
+            input = audioInput;
         }
+        else
+        {
+            inputBuffer.Clear();
 
-        // TODO: should you dispose the tensor?
-        var input = inputBuffer.ToTensor();
+            while (!inputBuffer.Full)
+            {
+                await Awaitable.NextFrameAsync();
+            }
+
+            // TODO: should you dispose the tensor?
+            input = inputBuffer.ToTensor();
+        }
 
         return await Infer(input);
     }
 
 
-    public async Awaitable<(Emotion, float)> Predict()
+    public async Awaitable<(Emotion, float)> Predict(Tensor<float> audioInput = null)
     {
-        var voiceTensor = await PredictRaw();
+        var voiceTensor = await PredictRaw(audioInput);
         var voiceArr = voiceTensor.AsReadOnlyNativeArray();
 
         int maxIndex = 0;

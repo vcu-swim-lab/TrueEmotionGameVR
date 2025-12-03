@@ -5,9 +5,10 @@ using UnityEngine;
 using System.Collections.Generic;
 
 using Debug = UnityEngine.Debug;
+using Mono.Cecil;
 
-[RequireComponent(typeof(DeviceManager))]
-public class EnableAudioToExpression : MonoBehaviour
+// [RequireComponent(typeof(DeviceManager))]
+public class SoundModel : MonoBehaviour
 {
     // logmel
 
@@ -23,9 +24,9 @@ public class EnableAudioToExpression : MonoBehaviour
     private Worker voiceWorker;
     private Worker logmelVoiceWorker;
 
-    private RingBuffer<float[]> inputBuffer;
+    // private RingBuffer<float[]> inputBuffer;
 
-    public void Start()
+    void Start()
     {
         Debug.Assert(voiceModel != null, $"Voice model not assigned in ${GetType().Name}");
 
@@ -36,16 +37,16 @@ public class EnableAudioToExpression : MonoBehaviour
         logmelVoiceModelObject = ModelLoader.Load(logmelVoiceModel);
         logmelVoiceWorker = new Worker(logmelVoiceModelObject, BackendType.CPU);
 
-        var deviceManager = GetComponent<DeviceManager>();
+        // var deviceManager = GetComponent<DeviceManager>();
 
-        var voiceDevice = deviceManager.Require(InputType.Sound);
-        if (voiceDevice == null)
-        {
-            Debug.LogError("Could not create microphone!");
-        }
+        // var voiceDevice = deviceManager.Require(InputType.Sound);
+        // if (voiceDevice == null)
+        // {
+        //     Debug.LogError("Could not create microphone!");
+        // }
 
-        inputBuffer = new(30, () => new float[16000]);
-        inputBuffer.Listen(voiceDevice);
+        // inputBuffer = new(30, () => new float[16000]);
+        // inputBuffer.Listen(voiceDevice);
 
         Debug.Log("SoundModel initialized.");
     }
@@ -68,22 +69,22 @@ public class EnableAudioToExpression : MonoBehaviour
     {
         Tensor<float> input;
 
-        if (audioInput != null)
-        {
+        // if (audioInput != null)
+        // {
             input = audioInput;
-        }
-        else
-        {
-            inputBuffer.Clear();
+        // }
+        // else
+        // {
+        //     inputBuffer.Clear();
 
-            while (!inputBuffer.Full)
-            {
-                await Awaitable.NextFrameAsync();
-            }
+        //     while (!inputBuffer.Full)
+        //     {
+        //         await Awaitable.NextFrameAsync();
+        //     }
 
-            // TODO: should you dispose the tensor?
-            input = inputBuffer.ToTensor();
-        }
+        //     // TODO: should you dispose the tensor?
+        //     input = inputBuffer.ToTensor();
+        // }
 
         return await Infer(input);
     }

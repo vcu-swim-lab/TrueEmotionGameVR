@@ -11,14 +11,14 @@ using Random = UnityEngine.Random;
 
 
 [RequireComponent(typeof(FaceAuModelInGame))]
-[RequireComponent(typeof(EnableAudioToExpression))]
+[RequireComponent(typeof(SoundModel))]
 public class ProgressGame : MonoBehaviour
 {
     private TextMeshProUGUI text;
     // private TextMeshProUGUI debug;
 
     private FaceAuModelInGame predictor;
-    private EnableAudioToExpression soundModel;
+    private SoundModel soundModel;
 
     [SerializeField]
     private AudioClip audio;
@@ -99,7 +99,9 @@ public class ProgressGame : MonoBehaviour
         // debug = GameObject.Find("Debug").GetComponent<TextMeshProUGUI>();
 
         predictor = GetComponent<FaceAuModelInGame>();
-        soundModel = GetComponent<EnableAudioToExpression>();
+        soundModel = GetComponent<SoundModel>();
+
+        audio = Microphone.Start(null, true, 30, 16000);
 
         RunGame();
         RunSoundTest();
@@ -172,7 +174,7 @@ public class ProgressGame : MonoBehaviour
 
             foreach (var emotion in scenarioEmotionList)
             {
-             for (int j = 3; j >= 0; --j)
+                for (int j = 3; j >= 0; --j)
                 {
                     text.text = $"{j}";
                     await Awaitable.WaitForSecondsAsync(1f);
@@ -262,7 +264,8 @@ public class ProgressGame : MonoBehaviour
 
         // return emotions;
 
-        var emo = await predictor.Predict();
+        // var emo = await predictor.Predict();
+        var emo = await PredictFromAudioClip(audio);
         return new Dictionary<Emotion, float>
         {
             { emo.Item1, emo.Item2 } // Simulate full confidence for the predicted emotion
@@ -304,17 +307,14 @@ public class ProgressGame : MonoBehaviour
             return (Emotion.Happiness, 0f);
         }
 
-        // Convert AudioClip to Tensor<float>
-        const int maxSamples = 30000; //Input size
-        var numSamples = Mathf.Min(audioClip.samples, maxSamples);
-        var data = new float[maxSamples];
+        var data = new float[audioClip.samples];
         audioClip.GetData(data, 0);
 
         //Pass this to predict
-        var audioInput = new Tensor<float>(new TensorShape(1, numSamples), data);
+        var audioInput = new Tensor<float>(new TensorShape(1, audioClip.samples), data);
 
         var result = await soundModel.Predict(audioInput);
-        
+
         audioInput.Dispose();
 
         return result;

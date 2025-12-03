@@ -880,13 +880,13 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 964688070}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: cbffc8fb1c595f5408575586e3940e4c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnableAudioToExpression
   voiceModel: {fileID: 5022602860645237092, guid: 87e25c175a1c9b74e9b2bb3cff73a35c, type: 3}
-  logmelVoiceModel: {fileID: 0}
+  logmelVoiceModel: {fileID: 5022602860645237092, guid: d551e84e76801894ab77b80db83a20dd, type: 3}
 --- !u!114 &964688082
 MonoBehaviour:
   m_ObjectHideFlags: 0

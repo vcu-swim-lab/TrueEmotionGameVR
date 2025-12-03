@@ -8,7 +8,7 @@ using Debug = UnityEngine.Debug;
 
 [RequireComponent(typeof(OVRFaceExpressions))]
 [RequireComponent(typeof(DeviceManager))]
-public class FaceAuModel : MonoBehaviour
+public class FaceAuModelInGame : MonoBehaviour
 {
     [SerializeField]
     private ModelAsset naturalModel;

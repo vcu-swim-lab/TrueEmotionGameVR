@@ -10,14 +10,14 @@ using UnityEngine.Android;
 using Random = UnityEngine.Random;
 
 
-[RequireComponent(typeof(FaceAuModel))]
+[RequireComponent(typeof(FaceAuModelInGame))]
 [RequireComponent(typeof(EnableAudioToExpression))]
 public class ProgressGame : MonoBehaviour
 {
     private TextMeshProUGUI text;
     // private TextMeshProUGUI debug;
 
-    private FaceAuModel predictor;
+    private FaceAuModelInGame predictor;
     private EnableAudioToExpression soundModel;
 
     [SerializeField]
@@ -98,7 +98,7 @@ public class ProgressGame : MonoBehaviour
         text = GameObject.Find("Instruction").GetComponent<TextMeshProUGUI>();
         // debug = GameObject.Find("Debug").GetComponent<TextMeshProUGUI>();
 
-        predictor = GetComponent<FaceAuModel>();
+        predictor = GetComponent<FaceAuModelInGame>();
         soundModel = GetComponent<EnableAudioToExpression>();
 
         RunGame();

@@ -101,7 +101,7 @@ public class ProgressGame : MonoBehaviour
         predictor = GetComponent<FaceAuModelInGame>();
         soundModel = GetComponent<SoundModel>();
 
-        audio = Microphone.Start(null, true, 30, 16000);
+        // audio = Microphone.Start(null, true, 30, 16000);
 
         RunGame();
         RunSoundTest();
@@ -307,11 +307,12 @@ public class ProgressGame : MonoBehaviour
             return (Emotion.Happiness, 0f);
         }
 
-        var data = new float[audioClip.samples];
-        audioClip.GetData(data, 0);
+        var padded = PadTo30Seconds(audioClip);
+        var data = new float[padded.samples];
+        padded.GetData(data, 0);
 
         //Pass this to predict
-        var audioInput = new Tensor<float>(new TensorShape(1, audioClip.samples), data);
+        var audioInput = new Tensor<float>(new TensorShape(1, padded.samples), data);
 
         var result = await soundModel.Predict(audioInput);
 
@@ -319,4 +320,38 @@ public class ProgressGame : MonoBehaviour
 
         return result;
     }
+
+    public static AudioClip PadTo30Seconds(AudioClip originalClip)
+    {
+    int targetLengthSeconds = 30;
+
+    int channels = originalClip.channels;
+    int frequency = originalClip.frequency;
+
+    int targetSamples = targetLengthSeconds * frequency * channels;
+
+    // Get original samples
+    float[] originalData = new float[originalClip.samples * channels];
+    originalClip.GetData(originalData, 0);
+
+    // Create new padded sample array
+    float[] newData = new float[targetSamples];
+
+    // Copy original samples to start of new clip
+    for (int i = 0; i < originalData.Length; i++)
+        newData[i] = originalData[i];
+
+    // Create new clip
+    AudioClip newClip = AudioClip.Create(
+        originalClip.name + "_Padded",
+        targetSamples / channels,
+        channels,
+        frequency,
+        false
+    );
+
+    newClip.SetData(newData, 0);
+
+    return newClip;
+}
 }

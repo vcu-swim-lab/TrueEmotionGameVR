@@ -725,13 +725,13 @@ GameObject:
   - component: {fileID: 964688071}
   - component: {fileID: 964688075}
   - component: {fileID: 964688076}
-  - component: {fileID: 964688078}
   - component: {fileID: 964688080}
   - component: {fileID: 964688079}
   - component: {fileID: 964688082}
-  - component: {fileID: 964688081}
   - component: {fileID: 964688084}
   - component: {fileID: 964688083}
+  - component: {fileID: 964688086}
+  - component: {fileID: 964688085}
   m_Layer: 7
   m_Name: Canvas
   m_TagString: Untagged
@@ -864,20 +864,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a95044baf65b10c4e89b246d2f881ac9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
---- !u!114 &964688078
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 964688070}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 8289b5e9f362b36439ae8d269a35a379, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  audio: {fileID: 8300000, guid: b1945455092ce37469c68f8b445d5c27, type: 3}
-  soundModelTemp: {fileID: 0}
 --- !u!114 &964688079
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -904,20 +890,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1dcb873734554274bb648be9fe18a8c3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: VREmotionDetection::DeviceManager
---- !u!114 &964688081
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 964688070}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: cbffc8fb1c595f5408575586e3940e4c, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::EnableAudioToExpression
-  voiceModel: {fileID: 5022602860645237092, guid: 87e25c175a1c9b74e9b2bb3cff73a35c, type: 3}
-  logmelVoiceModel: {fileID: 5022602860645237092, guid: d551e84e76801894ab77b80db83a20dd, type: 3}
 --- !u!114 &964688082
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1025,6 +997,34 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::FaceAuModel
   naturalModel: {fileID: 0}
   actedModel: {fileID: 0}
+--- !u!114 &964688085
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 964688070}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8289b5e9f362b36439ae8d269a35a379, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  audio: {fileID: 8300000, guid: 9d41365daa31cd7478c0f2a4a767f213, type: 3}
+  soundModelTemp: {fileID: 0}
+--- !u!114 &964688086
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 964688070}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cbffc8fb1c595f5408575586e3940e4c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  voiceModel: {fileID: 5022602860645237092, guid: 87e25c175a1c9b74e9b2bb3cff73a35c, type: 3}
+  logmelVoiceModel: {fileID: 5022602860645237092, guid: d551e84e76801894ab77b80db83a20dd, type: 3}
 --- !u!1 &1066909192
 GameObject:
   m_ObjectHideFlags: 0

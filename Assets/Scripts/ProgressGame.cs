@@ -304,54 +304,26 @@ public class ProgressGame : MonoBehaviour
         if (audioClip == null)
         {
             Debug.LogError("AudioClip is null");
-            return (Emotion.Happiness, 0f);
+            return (Emotion.Neutral, 0f);
         }
 
-        var padded = PadTo30Seconds(audioClip);
-        var data = new float[padded.samples];
-        padded.GetData(data, 0);
+        var input = SoundModel.PrepareAudio(audioClip);
+        var resultTensor = await soundModel.PredictRaw(input);
+        var result = resultTensor.DownloadToArray();
 
-        //Pass this to predict
-        var audioInput = new Tensor<float>(new TensorShape(1, padded.samples), data);
+        print($"Result: {string.Join(",", result)}");
 
-        var result = await soundModel.Predict(audioInput);
+        int maxIndex = 0;
+        float maxValue = result[0];
+        for (int i = 1; i < result.Length; ++i)
+        {
+            if (result[i] > maxValue)
+            {
+                maxValue = result[i];
+                maxIndex = i;
+            }
+        }
 
-        audioInput.Dispose();
-
-        return result;
+        return ((Emotion)maxIndex, maxValue);
     }
-
-    public static AudioClip PadTo30Seconds(AudioClip originalClip)
-    {
-    int targetLengthSeconds = 30;
-
-    int channels = originalClip.channels;
-    int frequency = originalClip.frequency;
-
-    int targetSamples = targetLengthSeconds * frequency * channels;
-
-    // Get original samples
-    float[] originalData = new float[originalClip.samples * channels];
-    originalClip.GetData(originalData, 0);
-
-    // Create new padded sample array
-    float[] newData = new float[targetSamples];
-
-    // Copy original samples to start of new clip
-    for (int i = 0; i < originalData.Length; i++)
-        newData[i] = originalData[i];
-
-    // Create new clip
-    AudioClip newClip = AudioClip.Create(
-        originalClip.name + "_Padded",
-        targetSamples / channels,
-        channels,
-        frequency,
-        false
-    );
-
-    newClip.SetData(newData, 0);
-
-    return newClip;
-}
 }

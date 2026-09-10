@@ -9,14 +9,15 @@ using UnityEngine.InputSystem.XR.Haptics;
 using Random = UnityEngine.Random;
 
 
-[RequireComponent(typeof(EmotionPredictor))]
+[RequireComponent(typeof(NewFaceAuModel))]
+[RequireComponent(typeof(DeviceManager))]
 [RequireComponent(typeof(OVRFaceExpressions))]
 public class ProgressGame : MonoBehaviour
 {
     private TextMeshProUGUI text;
     // private TextMeshProUGUI debug;
 
-    private EmotionPredictor predictor;
+    private NewFaceAuModel predictor;
 
     [SerializeField]
     private ModelAsset soundModelTemp;
@@ -41,7 +42,7 @@ public class ProgressGame : MonoBehaviour
         text = GameObject.Find("Instruction").GetComponent<TextMeshProUGUI>();
         // debug = GameObject.Find("Debug").GetComponent<TextMeshProUGUI>();
 
-        predictor = GetComponent<EmotionPredictor>();
+        predictor = GetComponent<NewFaceAuModel>();
 
         if (progressBar == null)
         {
@@ -109,22 +110,18 @@ public class ProgressGame : MonoBehaviour
                     await Awaitable.WaitForSecondsAsync(1f);
                 }
 
-                //Show what emoji you are on out of total
-                //int n = 0;
-                text.text = $"(n + 1) / 6\n";
-
                 // Show emoji for current emotion
                 string emoji = emotionToEmoji[emotion];
                 text.text = $"{n + 1} / {max}\n\n\n{emoji}\n{emotion}";
 
-                //progress bar 
-                progressBar.SetMaximum(max);
+                //progress bar
                 if (progressBar == null)
                 {
                     Debug.LogError($"progressbar is null");
                 }
-                if (progressBar != null)
+                else
                 {
+                    progressBar.SetMaximum(max);
                     progressBar.SetCurrent(n + 1);
                     progressBar.SetProgressBarVisible(true);
                 }
@@ -151,16 +148,14 @@ public class ProgressGame : MonoBehaviour
             {
                 await Awaitable.NextFrameAsync();
             }
-
-            RunGame();
+            // Loop back to the top of `while (true)` for the next round instead of
+            // recursively calling RunGame() again, which used to stack a second
+            // concurrent game loop on top of this one every time the player restarted.
         }
     }
 
     private async Awaitable<int> RunPredictionCoroutine(Emotion emotion)
     {
-        predictor.Flush(); // Ensure we start with fresh data
-        predictor.Polling = true;
-
         int score = 0;
 
         const int intervalMs = 1000;
@@ -194,8 +189,6 @@ public class ProgressGame : MonoBehaviour
         }
 
         print("Done with predicting " + emotion);
-
-        predictor.Polling = false;
 
         return score;
     }

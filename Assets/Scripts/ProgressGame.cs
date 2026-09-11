@@ -5,6 +5,7 @@ using TMPro;
 using Unity.InferenceEngine;
 using UnityEngine;
 using UnityEngine.Android;
+using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.XR.Haptics;
 using Random = UnityEngine.Random;
 
@@ -13,6 +14,12 @@ using Random = UnityEngine.Random;
 [RequireComponent(typeof(OVRFaceExpressions))]
 public class ProgressGame : MonoBehaviour
 {
+    [Header("Desktop Testing")]
+    [SerializeField] private bool useMockPredictions = false;
+    [SerializeField, Range(0f, 1f)] private float mockCorrectChance = 0.5f;
+    [SerializeField] private int secondsPerEmotion = 10;
+    [SerializeField] private int editorSecondsPerEmotion = 3;
+
     private TextMeshProUGUI text;
     // private TextMeshProUGUI debug;
 
@@ -52,7 +59,7 @@ public class ProgressGame : MonoBehaviour
             }
             else
             {
-                Debug.LogError("Could not find ProgressBar component in scene!");
+                Debug.LogWarning("Could not find ProgressBar component in scene!");
             }
         }
 
@@ -70,6 +77,17 @@ public class ProgressGame : MonoBehaviour
         OVRInput.FixedUpdate();
     }
 
+    private bool RestartButtonPressed()
+{
+    bool vrButtonPressed = OVRInput.GetDown(OVRInput.Button.Any);
+
+    bool spacebarPressed =
+        Keyboard.current != null &&
+        Keyboard.current.spaceKey.wasPressedThisFrame;
+
+    return vrButtonPressed || spacebarPressed;
+}
+
 
     private async void RunGame()
     {
@@ -83,7 +101,7 @@ public class ProgressGame : MonoBehaviour
                 (emotionList[i], emotionList[j]) = (emotionList[j], emotionList[i]);
             }
 
-            text.text = "You got 10s to act each emotion shown to you. Good luck.";
+            text.text = $"You got {GetSecondsPerEmotion()}s to act each emotion shown to you. Good luck.";
             //hides the progress bar
             if (progressBar != null)
                 progressBar.SetProgressBarVisible(false);
@@ -109,22 +127,19 @@ public class ProgressGame : MonoBehaviour
                     await Awaitable.WaitForSecondsAsync(1f);
                 }
 
-                //Show what emoji you are on out of total
-                //int n = 0;
-                text.text = $"(n + 1) / 6\n";
 
                 // Show emoji for current emotion
                 string emoji = emotionToEmoji[emotion];
                 text.text = $"{n + 1} / {max}\n\n\n{emoji}\n{emotion}";
 
-                //progress bar 
-                progressBar.SetMaximum(max);
+                // Progress bar
                 if (progressBar == null)
                 {
-                    Debug.LogError($"progressbar is null");
-                }
-                if (progressBar != null)
+                    Debug.LogWarning("ProgressBar component not found.");
+                }   
+                else
                 {
+                    progressBar.SetMaximum(max);
                     progressBar.SetCurrent(n + 1);
                     progressBar.SetProgressBarVisible(true);
                 }
@@ -137,24 +152,31 @@ public class ProgressGame : MonoBehaviour
                 if (progressBar != null)
                     progressBar.SetProgressBarVisible(false);
 
-                text.text = $"Score: {this_score}/10";
+                text.text = $"Score: {this_score}/{GetSecondsPerEmotion()}";
                 await Awaitable.WaitForSecondsAsync(1f);
             }
 
             text.text = "Thanks for playing! Scores:\n" +
-                        string.Join("\n", score.Select(kv => $"{kv.Key}: {kv.Value}/10")) + "\n\n" +
-                        "Press any button to restart";
+            string.Join("\n", score.Select(kv => $"{kv.Key}: {kv.Value}/{GetSecondsPerEmotion()}"));
 
             Debug.Log("All emotion predictions collected.");
 
-            while (!OVRInput.GetDown(OVRInput.Button.Any))
+            while (!RestartButtonPressed())
             {
                 await Awaitable.NextFrameAsync();
             }
 
-            RunGame();
         }
     }
+
+    private int GetSecondsPerEmotion()
+    {
+        #if UNITY_EDITOR 
+        return editorSecondsPerEmotion;
+        #else
+        return secondsPerEmotion;
+        #endif
+        }
 
     private async Awaitable<int> RunPredictionCoroutine(Emotion emotion)
     {
@@ -164,19 +186,16 @@ public class ProgressGame : MonoBehaviour
         int score = 0;
 
         const int intervalMs = 1000;
+        
+        int times = GetSecondsPerEmotion();
 
-#if UNITY_EDITOR
-        int times = 2;
-#else
-        int times = 10;
-#endif
         for (int i = 0; i < times; ++i)
         {
             // Calculate next target time
             float nextTick = Time.time + (intervalMs / 1000f);
 
             // Await prediction
-            var allConfidences = await PredictEmotionAsync();
+            var allConfidences = await PredictEmotionAsync(emotion);
 
             if (allConfidences.TryGetValue(emotion, out float confidence))
             {
@@ -201,29 +220,40 @@ public class ProgressGame : MonoBehaviour
     }
 
     // Simulated async emotion predictor returning full confidence dictionary
-    private async Awaitable<Dictionary<Emotion, float>> PredictEmotionAsync()
+    private async Awaitable<Dictionary<Emotion, float>> PredictEmotionAsync(Emotion target)
+{
+    if (useMockPredictions)
     {
-        // await Awaitable.NextFrameAsync(); // simulate async
+        bool isCorrect = Random.value < mockCorrectChance;
 
-        // var emotions = new Dictionary<Emotion, float>();
-        // foreach (var emo in emotionList)
-        // {
-        //     emotions[emo] = Random.Range(0f, 1f);
-        // }
+        Emotion predictedEmotion;
 
-        // // Normalize
-        // float total = 0f;
-        // foreach (var val in emotions.Values) total += val;
-        // foreach (var key in new List<Emotion>(emotions.Keys)) emotions[key] /= total;
+        if (isCorrect)
+        {
+            predictedEmotion = target;
+        }
+        else
+        {
+            Emotion[] wrongEmotions = emotionList
+                .Where(e => e != target)
+                .ToArray();
 
-        // return emotions;
+            predictedEmotion = wrongEmotions[Random.Range(0, wrongEmotions.Length)];
+        }
 
-        var emo = await predictor.Predict();
         return new Dictionary<Emotion, float>
         {
-            { emo.Item1, emo.Item2 } // Simulate full confidence for the predicted emotion
+            { predictedEmotion, 1f }
         };
     }
+
+    var emo = await predictor.Predict();
+
+    return new Dictionary<Emotion, float>
+    {
+        { emo.Item1, emo.Item2 }
+    };
+}
 
 
     private async void RunSoundTest()

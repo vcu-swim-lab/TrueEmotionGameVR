@@ -98,8 +98,16 @@ InitTestScene*.unity*
 # Auto-generated scenes by play mode tests
 /[Aa]ssets/[Ii]nit[Tt]est[Ss]cene*.unity*
 
-# Python bytecode from the offline analysis scripts in Analysis/
+# Python bytecode from the offline analysis scripts in Analysis/. These patterns are
+# not anchored, so they already match Analysis/__pycache__/ at any depth.
 __pycache__/
 *.py[cod]
 
-Analysis/
+# Analysis output is derived from participant recordings, so the generated files stay
+# out of version control while the directory and its documented schema stay in. The
+# analysis sources and tests themselves are tracked: a study whose analysis cannot be
+# pinned to a commit cannot show that its thresholds were chosen before the data.
+Analysis/results/*.json
+Analysis/results/*.txt
+!Analysis/results/README.md
+!Analysis/results/.gitkeep

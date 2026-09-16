@@ -88,11 +88,19 @@ public class ProtocolRunner : MonoBehaviour
     };
 
     // Worded identically for every participant, and asking for rest rather than for an
-    // expression.
-    private const string NeutralPrompt =
-        "Neutral\n\n" +
-        "Let your face relax naturally.\n" +
-        "Keep your mouth and eyebrows in their natural position.";
+    // expression. Two lines, matching the shape of the emoji prompts so the Neutral trial
+    // does not look like a different kind of screen -- and so it fits the instruction box
+    // without overflowing it.
+    //
+    // Deliberately not "Relax your face": that is exactly what the between-trial transition
+    // screen says, and reusing it would blur the line between the part that is recorded and
+    // the part that is not.
+    //
+    // The guidance about where the mouth and eyebrows should sit lives in the intro instead.
+    // It is worth saying -- asked to "be neutral", people often produce a deliberately blank
+    // or tensed face rather than a resting one -- but it is too long to repeat on a prompt
+    // that appears mid-trial, and the intro has six seconds in which to read it.
+    private const string NeutralPrompt = "Neutral\nLet your face rest.";
 
     private static string PromptScreen(Emotion emotion) =>
         emotion == Emotion.Neutral
@@ -322,9 +330,10 @@ public class ProtocolRunner : MonoBehaviour
         // that the operator's note is written at the same moment the session starts.
         Debug.Log($"{nameof(ProtocolRunner)}: recording to {sessionLogger.SessionDirectory}");
 
-        Show("We will show you one expression at a time.\n\n" +
-             "Hold it until you are told to relax. One of the prompts\n" +
-             "asks you to rest your face instead of making an expression.\n\n" +
+        Show("We will show you one expression at a time.\n" +
+             "Hold it until you are told to relax.\n\n" +
+             "One prompt asks you to rest your face instead. For that one,\n" +
+             "let your mouth and eyebrows sit where they naturally fall.\n\n" +
              "You will not be scored.");
         await Awaitable.WaitForSecondsAsync(Scaled(6f));
 

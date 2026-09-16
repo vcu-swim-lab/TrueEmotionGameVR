@@ -110,8 +110,42 @@ Calibration lives only in memory, for one headset sitting. The claim is narrowed
 > After putting the headset on and completing a short calibration, does recognition improve
 > **within that same sitting**, on separate trials?
 
-This is **untested**. It sits between the leaky within-trial evidence (positive) and the
-cross-session evidence (negative). Section 1.2 is the reason to expect little.
+### 2.0 First trial-disjoint measurement — n = 1
+
+`session_20260916_201632_85c128`, Quest Pro, 21 trials, 100% tracking, all seven centroids on
+the full nine ticks, no unscored trials, replay fidelity 1.000 at 2.98e-07. The first honest
+measurement of this question:
+
+| | raw ONNX argmax | adapter | delta |
+|---|---|---|---|
+| tick accuracy | 0.5159 | 0.6746 | **+0.1587** |
+| **trial-majority accuracy (primary)** | 0.6429 | 0.7143 | **+0.0714** |
+| **macro-F1 (primary)** | 0.5952 | 0.6810 | **+0.0857** |
+
+Per-class trial recall (two trials each), argmax → adapter: Anger 0.50 → **1.00**, Disgust
+0.50 → **1.00**, Surprise 0.50 → 0.50, Neutral 1.00 → 1.00, Sadness 1.00 → 1.00, Fear
+0.00 → 0.00, Happiness 1.00 → **0.50**.
+
+Both baseline rows are identical (0.6429 / 0.6429), which is the seven-state design working as
+intended: the adapter and the raw model range over the same class set, so the baseline cannot be
+chosen after the fact.
+
+Enrolment diagnostics: centroid separation 0.87847 (mean pairwise cosine; compare 0.8387–0.9098
+on the earlier good recordings and 0.9798 on the low-intensity one). K→D drift 0.97842 mean, and
+the drift is lowest exactly where the adapter fails — Fear 0.9460, Happiness 0.9612.
+
+**What this is not.** One participant, one sitting. The unit of a decision is the participant, so
+this is a single observation of the quantity that matters, not a result. The evaluation block
+always follows the calibration block, so order, fatigue and learning are inside the +0.0857. And
+Happiness went *down* by a full trial, which is the failure mode the go/no-go criterion in
+section 8 exists to catch — with 14 trials one class moving is well inside noise, which is the
+point of not deciding from one person.
+
+**What it does establish**, and this is worth separating from the effect size: the pipeline is
+real. A trial-disjoint split is now constructible, the frozen rules fire, and the number is
+attributable to a recording and a settings block. Section 1.2 predicted "at or below zero" from
+the decay analysis; the measured value is above zero on this participant. That is a reason to run
+the 6–8 person pilot, not a reason to believe the method works.
 
 ### Blocks
 
@@ -166,12 +200,33 @@ participant to act neutral rather than to rest. The wording is fixed and identic
 
 ```
 Neutral
-
-Let your face relax naturally.
-Keep your mouth and eyebrows in their natural position.
+Let your face rest.
 ```
 
 During the hold the screen reads `Stay relaxed`.
+
+Two lines, matching the shape of the emoji prompts, so the Neutral trial does not read as a
+different kind of screen — and so it fits the instruction box rather than overflowing it.
+It deliberately avoids "Relax your face", which is what the between-trial transition screen
+says: reusing those words would blur the boundary between the part that is recorded and the
+part that is not.
+
+Where the mouth and eyebrows should sit is said **once, in the intro**, not on the prompt:
+
+```
+We will show you one expression at a time.
+Hold it until you are told to relax.
+
+One prompt asks you to rest your face instead. For that one,
+let your mouth and eyebrows sit where they naturally fall.
+
+You will not be scored.
+```
+
+That guidance is worth giving — asked to "be neutral", people often produce a deliberately
+blank or tensed face rather than a resting one, and a tensed face is not the resting baseline
+the centroid is supposed to capture. But it is too long to repeat on a screen that appears
+mid-trial, and the intro has six seconds in which to read it.
 
 Including Neutral also closes the baseline trap of section 1: with all seven states prompted, the
 adapter and the raw model range over the *same* class set, so "argmax over all classes" and

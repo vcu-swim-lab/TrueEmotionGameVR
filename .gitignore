@@ -111,3 +111,8 @@ Analysis/results/*.json
 Analysis/results/*.txt
 !Analysis/results/README.md
 !Analysis/results/.gitkeep
+
+# The verbatim self-reports that acted_exclusions_derived.csv was derived from. A
+# participant's own words about how they felt stay with the corpus, outside version
+# control; the analysis needs only which recordings are excluded and why, in categories.
+Analysis/data/acted_self_report_exclusions.csv

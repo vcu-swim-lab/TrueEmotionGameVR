@@ -17,10 +17,32 @@ using UnityEngine;
 // All numbers are formatted with the invariant culture. On a Windows machine with a
 // Turkish (or any comma-decimal) locale the default formatting would emit "0,4213",
 // which silently corrupts a comma-separated file.
+// Which block of the session a trial belongs to. The analysis splits on this: centroids are
+// fitted on Calibration trials and scored on Evaluation trials, which are separate trials of
+// the same state rather than later ticks of the same held expression.
+public enum BlockRole
+{
+    Calibration,
+    Evaluation,
+}
+
 public sealed class SessionLogger : IDisposable
 {
     public const string StatusOk = "ok";
     public const string StatusNoTracking = "no_tracking";
+
+    // Canonical on-disk spellings, written instead of `blockRole.ToString()`. The enum member
+    // names are capitalised and renaming one would silently change the file vocabulary that
+    // the Python side matches on; going through this map makes that a compile error instead.
+    public const string RoleCalibration = "calibration";
+    public const string RoleEvaluation = "evaluation";
+
+    private static string Canonical(BlockRole role) => role switch
+    {
+        BlockRole.Calibration => RoleCalibration,
+        BlockRole.Evaluation => RoleEvaluation,
+        _ => throw new ArgumentOutOfRangeException(nameof(role), role, "unmapped block role"),
+    };
 
     private static readonly Emotion[] ClassOrder =
     {
@@ -89,7 +111,8 @@ public sealed class SessionLogger : IDisposable
     private string BuildHeader()
     {
         var sb = new StringBuilder();
-        sb.Append("timestamp_utc,session_id,trial_id,prompted_emotion,prediction_index,")
+        sb.Append("timestamp_utc,session_id,trial_id,block_role,repeat_index,")
+          .Append("prompted_emotion,prediction_index,")
           .Append("predicted_emotion,correct,status,generation");
 
         foreach (var emotion in ClassOrder)
@@ -113,10 +136,31 @@ public sealed class SessionLogger : IDisposable
         return sb.ToString();
     }
 
-    // One prediction. `prediction` is null when no window of valid frames could be
-    // collected, which is logged as a row with status `no_tracking` rather than dropped:
-    // knowing when tracking failed is part of the diagnosis.
-    public void LogPrediction(int trialId, Emotion promptedEmotion, int predictionIndex, FacePrediction? prediction)
+    // One prediction from a study session, tagged with the block it belongs to.
+    //
+    // `prediction` is null when no window of valid frames could be collected, which is
+    // logged as a row with status `no_tracking` rather than dropped: knowing when tracking
+    // failed is part of the diagnosis.
+    public void LogPrediction(int trialId, BlockRole blockRole, int repeatIndex,
+                              Emotion promptedEmotion, int predictionIndex,
+                              FacePrediction? prediction)
+        => LogRow(trialId,
+                  Canonical(blockRole),
+                  repeatIndex.ToString(CultureInfo.InvariantCulture),
+                  promptedEmotion, predictionIndex, prediction);
+
+    // One prediction from a session that has no calibration and no evaluation block -- the
+    // scored game. `block_role` and `repeat_index` are left empty rather than guessed, so an
+    // analysis that splits on them refuses the file outright instead of silently treating a
+    // game recording as study data.
+    public void LogPrediction(int trialId, Emotion promptedEmotion, int predictionIndex,
+                              FacePrediction? prediction)
+        => LogRow(trialId, string.Empty, string.Empty,
+                  promptedEmotion, predictionIndex, prediction);
+
+    private void LogRow(int trialId, string blockRole, string repeatIndex,
+                        Emotion promptedEmotion, int predictionIndex,
+                        FacePrediction? prediction)
     {
         if (writer == null)
         {
@@ -127,9 +171,14 @@ public sealed class SessionLogger : IDisposable
         {
             row.Clear();
 
+            // `block_role` and `repeat_index` come from the plan, so they are written even
+            // on a no_tracking row: a dropout must still be attributable to the block and
+            // repeat it happened in. That also keeps the blank count below unchanged.
             row.Append(DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture)).Append('Z');
             row.Append(',').Append(Escape(sessionId));
             row.Append(',').Append(trialId.ToString(CultureInfo.InvariantCulture));
+            row.Append(',').Append(blockRole);
+            row.Append(',').Append(repeatIndex);
             row.Append(',').Append(Escape(promptedEmotion.ToString()));
             row.Append(',').Append(predictionIndex.ToString(CultureInfo.InvariantCulture));
 
@@ -246,6 +295,8 @@ public sealed class SessionLogger : IDisposable
             sb.AppendLine("    \"timestamp_utc\": \"ISO-8601 UTC time the row was written\",");
             sb.AppendLine("    \"session_id\": \"identifier shared by every row of this session\",");
             sb.AppendLine("    \"trial_id\": \"0-based index of the prompt within the session\",");
+            sb.AppendLine("    \"block_role\": \"calibration or evaluation; which block this trial belongs to\",");
+            sb.AppendLine("    \"repeat_index\": \"1-based presentation of this emotion within its block role\",");
             sb.AppendLine("    \"prompted_emotion\": \"emotion the player was asked to act\",");
             sb.AppendLine("    \"prediction_index\": \"0-based tick within the trial\",");
             sb.AppendLine("    \"predicted_emotion\": \"argmax class, empty when status is no_tracking\",");

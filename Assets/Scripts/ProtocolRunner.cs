@@ -7,9 +7,26 @@ using UnityEngine;
 
 using Random = System.Random;
 
-// Finite single-pass session runner. It prompts each of the six performed emotions once,
-// shows no score or prediction feedback, and keeps the full hold and relax phases. Neutral
-// is not a prompted trial; the relax phase is only a transition and is not scored.
+// Finite session runner for the session-local calibration study.
+//
+// Two blocks, seven states each, no feedback of any kind:
+//
+//   K -- calibration, one trial per state.   7 trials
+//   D -- evaluation, two trials per state.  14 trials
+//
+// The point of the split is that a calibration profile fitted on K is scored on *separate
+// trials* of the same states in D. The earlier within-trial measurement -- fit on the first
+// ticks of a held expression, test on its last ticks -- measures consistency within one
+// performance, and the gain it reported decays to nothing as those ticks are moved apart.
+//
+// D has two trials per state rather than one because a seven-trial evaluation cannot support
+// a decision: its trial-level metric moves in steps of 1/7, and a sign test over seven paired
+// trials reaches significance only on a perfect sweep.
+//
+// Neutral is a prompted state here, with its own trial, its own countdown and its own ten
+// ticks. It is deliberately NOT harvested from the inter-trial relax phase: a transition
+// sample carries the tail of the previous expression, and building a Neutral centroid that
+// way was measured making things worse rather than better.
 [RequireComponent(typeof(NewFaceAuModel))]
 [RequireComponent(typeof(DeviceManager))]
 [RequireComponent(typeof(OVRFaceExpressions))]
@@ -18,9 +35,14 @@ public class ProtocolRunner : MonoBehaviour
     // Bump when anything that changes the meaning of a recording changes: the class set,
     // the block structure, the timings, or the feedback policy. It is written into the
     // session metadata so a pooled analysis can refuse to mix incompatible recordings.
-    public const string ProtocolVersion = "single-pass-v2";
+    // `single-pass-v2` is a different protocol -- six states, no Neutral -- and keeps its
+    // meaning. Sessions recorded under different protocol versions are never pooled, so
+    // redefining a version in place would break that guarantee for anything already
+    // stamped with it.
+    public const string ProtocolVersion = "session-local-v1";
 
-    public const int Blocks = 1;
+    public const int CalibrationPasses = 1;   // K block: 7 trials
+    public const int EvaluationPasses = 2;    // D block: 14 trials
     public const int TicksPerTrial = 10;
 
     [Header("Scene")]
@@ -42,14 +64,20 @@ public class ProtocolRunner : MonoBehaviour
              "Recordings made with this on are marked as rehearsals and must not be analysed.")]
     [SerializeField] private bool fastRehearsal = false;
 
-    // The six performed emotions. Neutral remains a model output class, but is not prompted.
-    private static readonly Emotion[] PromptedEmotions =
+    // All seven model output classes are prompted, Neutral included. Leaving Neutral out
+    // would let the adapter range over six classes while the raw model ranges over seven,
+    // and comparing those two credits the adapter for excluding a class rather than for
+    // calibrating anything -- an error this project has already made once.
+    public static readonly Emotion[] PromptedEmotions =
     {
         Emotion.Anger, Emotion.Disgust, Emotion.Fear, Emotion.Happiness,
-        Emotion.Sadness, Emotion.Surprise,
+        Emotion.Neutral, Emotion.Sadness, Emotion.Surprise,
     };
 
-    private static readonly Dictionary<Emotion, string> EmotionToEmoji = new()
+    // Neutral is deliberately absent. Every emoji here depicts a performed expression, and
+    // showing one for Neutral would prompt the participant to *act* neutral rather than to
+    // rest. It is prompted with text instead; see `PromptScreen`.
+    public static readonly Dictionary<Emotion, string> EmotionToEmoji = new()
     {
         { Emotion.Anger, "🤬" },
         { Emotion.Disgust, "🤢" },
@@ -59,18 +87,37 @@ public class ProtocolRunner : MonoBehaviour
         { Emotion.Surprise, "😲" },
     };
 
+    // Worded identically for every participant, and asking for rest rather than for an
+    // expression.
+    private const string NeutralPrompt =
+        "Neutral\n\n" +
+        "Let your face relax naturally.\n" +
+        "Keep your mouth and eyebrows in their natural position.";
+
+    private static string PromptScreen(Emotion emotion) =>
+        emotion == Emotion.Neutral
+            ? NeutralPrompt
+            : $"{EmotionToEmoji[emotion]}\n{emotion}";
+
+    private static string HoldScreen(Emotion emotion) =>
+        emotion == Emotion.Neutral
+            ? "Stay relaxed"
+            : $"{EmotionToEmoji[emotion]}\n\nHold it";
+
     // One prompt, resolved before the session starts so the whole schedule is fixed and
     // recordable in advance rather than decided trial by trial.
     public readonly struct PlannedTrial
     {
         public readonly int TrialId;
-        public readonly int BlockIndex;   // 0-based
-        public readonly int RepeatIndex;  // 1-based: which presentation of this emotion
+        public readonly BlockRole Role;
+        public readonly int BlockIndex;   // 0-based pass index within this role
+        public readonly int RepeatIndex;  // 1-based presentation of this emotion in this role
         public readonly Emotion Emotion;
 
-        public PlannedTrial(int trialId, int blockIndex, int repeatIndex, Emotion emotion)
+        public PlannedTrial(int trialId, BlockRole role, int blockIndex, int repeatIndex, Emotion emotion)
         {
             TrialId = trialId;
+            Role = role;
             BlockIndex = blockIndex;
             RepeatIndex = repeatIndex;
             Emotion = emotion;
@@ -112,40 +159,55 @@ public class ProtocolRunner : MonoBehaviour
         RunSession();
     }
 
-    // One block containing a shuffled pass over all six emotions. Keeping the plan builder
-    // block-based makes the recorded block and repeat indices explicit even in a single pass.
+    // The calibration block, then the evaluation block, each a sequence of shuffled passes
+    // over all seven states. Resolved up front so the whole schedule is fixed and recordable
+    // in advance rather than decided trial by trial.
     public static List<PlannedTrial> BuildPlan(int seed)
     {
         var random = new Random(seed);
-        var plan = new List<PlannedTrial>(Blocks * PromptedEmotions.Length);
-        var repeats = PromptedEmotions.ToDictionary(e => e, _ => 0);
+        var plan = new List<PlannedTrial>(
+            (CalibrationPasses + EvaluationPasses) * PromptedEmotions.Length);
 
+        // Carried across passes *and* across the block boundary, so the first evaluation
+        // trial also differs from the last calibration trial.
         Emotion? previous = null;
 
-        for (int block = 0; block < Blocks; ++block)
+        void AddPasses(BlockRole role, int passes)
         {
-            var order = PromptedEmotions.ToArray();
+            // Repeat counts restart per block, so `repeat_index` reads as "the nth time this
+            // state was shown in this block" and does not depend on how long the preceding
+            // block was.
+            var repeats = PromptedEmotions.ToDictionary(e => e, _ => 0);
 
-            // Fisher-Yates. The redraw guard is harmless for the first (and currently only)
-            // block and prevents adjacent duplicates if more blocks are configured later.
-            do
+            for (int pass = 0; pass < passes; ++pass)
             {
-                for (int i = order.Length - 1; i > 0; --i)
+                var order = PromptedEmotions.ToArray();
+
+                // Fisher-Yates, redrawn if the pass would open on the state the previous
+                // pass closed with. Within a pass no state repeats, so a pass boundary is
+                // the only place the same state could land back to back.
+                do
                 {
-                    int j = random.Next(i + 1);
-                    (order[i], order[j]) = (order[j], order[i]);
+                    for (int i = order.Length - 1; i > 0; --i)
+                    {
+                        int j = random.Next(i + 1);
+                        (order[i], order[j]) = (order[j], order[i]);
+                    }
                 }
-            }
-            while (previous.HasValue && order[0] == previous.Value);
+                while (previous.HasValue && order[0] == previous.Value);
 
-            foreach (var emotion in order)
-            {
-                repeats[emotion]++;
-                plan.Add(new PlannedTrial(plan.Count, block, repeats[emotion], emotion));
-            }
+                foreach (var emotion in order)
+                {
+                    repeats[emotion]++;
+                    plan.Add(new PlannedTrial(plan.Count, role, pass, repeats[emotion], emotion));
+                }
 
-            previous = order[^1];
+                previous = order[^1];
+            }
         }
+
+        AddPasses(BlockRole.Calibration, CalibrationPasses);
+        AddPasses(BlockRole.Evaluation, EvaluationPasses);
 
         return plan;
     }
@@ -161,12 +223,28 @@ public class ProtocolRunner : MonoBehaviour
                 { "face_model_softmax_reason", "graph already ends in Softmax; output is already a probability distribution" },
             };
 
+            // Counted off the plan rather than from the constants, so these can never
+            // disagree with the schedule that actually ran.
+            int calibrationTrials = Plan.Count(t => t.Role == BlockRole.Calibration);
+            int evaluationTrials = Plan.Count(t => t.Role == BlockRole.Evaluation);
+
             var sessionInfo = new Dictionary<string, string>
             {
                 { "protocol_version", ProtocolVersion },
                 { "randomization_seed", seedUsed.ToString() },
                 { "trial_count", Plan.Count.ToString() },
-                { "blocks", Blocks.ToString() },
+
+                // Deprecated, kept so readers of older recordings are not broken. Use
+                // `block_count` and the per-block fields below.
+                { "blocks", "2" },
+
+                { "block_count", "2" },
+                { "calibration_trials", calibrationTrials.ToString() },
+                { "evaluation_trials", evaluationTrials.ToString() },
+                { "calibration_passes", CalibrationPasses.ToString() },
+                { "evaluation_passes", EvaluationPasses.ToString() },
+                { "evaluation_repeats", EvaluationPasses.ToString() },
+
                 { "ticks_per_trial", (fastRehearsal ? 3 : TicksPerTrial).ToString() },
                 { "fast_rehearsal", fastRehearsal ? "true" : "false" },
                 { "self_report", "not collected (deliberate; no controller in this study)" },
@@ -245,7 +323,8 @@ public class ProtocolRunner : MonoBehaviour
         Debug.Log($"{nameof(ProtocolRunner)}: recording to {sessionLogger.SessionDirectory}");
 
         Show("We will show you one expression at a time.\n\n" +
-             "Hold each expression until you are told to relax.\n\n" +
+             "Hold it until you are told to relax. One of the prompts\n" +
+             "asks you to rest your face instead of making an expression.\n\n" +
              "You will not be scored.");
         await Awaitable.WaitForSecondsAsync(Scaled(6f));
 
@@ -262,8 +341,9 @@ public class ProtocolRunner : MonoBehaviour
 
     private async Awaitable RunTrial(PlannedTrial trial)
     {
-        // 1. Prompt. Named and pictured for each performed expression.
-        Show($"{EmotionToEmoji[trial.Emotion]}\n{trial.Emotion}");
+        // 1. Prompt. Named and pictured for the six performed expressions; worded as rest
+        //    for Neutral, which has no emoji.
+        Show(PromptScreen(trial.Emotion));
         await Awaitable.WaitForSecondsAsync(Scaled(promptSeconds));
 
         // 2. Countdown, so the expression starts at a known moment rather than drifting
@@ -275,7 +355,7 @@ public class ProtocolRunner : MonoBehaviour
         }
 
         // 3. Hold, while the model is polled once a second.
-        Show($"{EmotionToEmoji[trial.Emotion]}\n\nHold it");
+        Show(HoldScreen(trial.Emotion));
         await RecordTrial(trial);
 
         // 4. Non-evaluative acknowledgement -- identical whatever the model predicted.
@@ -311,7 +391,8 @@ public class ProtocolRunner : MonoBehaviour
 
             // Logged whether or not tracking held, so a dropout is visible in the file
             // rather than showing up as a missing row.
-            sessionLogger?.LogPrediction(trial.TrialId, trial.Emotion, i, prediction);
+            sessionLogger?.LogPrediction(trial.TrialId, trial.Role, trial.RepeatIndex,
+                                         trial.Emotion, i, prediction);
 
             float remaining = nextTick - Time.time;
             if (remaining > 0)

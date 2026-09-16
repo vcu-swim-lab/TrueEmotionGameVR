@@ -37,12 +37,19 @@ public class ProgressGame : MonoBehaviour
     private readonly Emotion[] emotionList = emotionToEmoji.Keys.ToArray();
     public ProgressBar progressBar;
 
+    private SessionLogger sessionLogger;
+
+    // Monotonic across rounds, so restarting the game does not reuse trial ids.
+    private int trialCounter;
+
     void Start()
     {
         text = GameObject.Find("Instruction").GetComponent<TextMeshProUGUI>();
         // debug = GameObject.Find("Debug").GetComponent<TextMeshProUGUI>();
 
         predictor = GetComponent<NewFaceAuModel>();
+
+        StartSessionLogger();
 
         if (progressBar == null)
         {
@@ -69,6 +76,61 @@ public class ProgressGame : MonoBehaviour
     void FixedUpdate()
     {
         OVRInput.FixedUpdate();
+    }
+
+    private void StartSessionLogger()
+    {
+        try
+        {
+            var modelInfo = new Dictionary<string, string>
+            {
+                { "face_model_asset", predictor != null ? predictor.FaceModelName ?? "(unassigned)" : "(no predictor)" },
+                { "face_model_append_softmax", "false" },
+                { "face_model_softmax_reason", "graph already ends in Softmax; output is already a probability distribution" },
+                { "sound_model_asset", soundModelTemp != null ? soundModelTemp.name : "(unassigned)" },
+                { "sound_model_append_softmax", "true" },
+                { "sound_model_softmax_reason", "graph ends in Gemm and emits raw logits" },
+                { "logmel_model_append_softmax", "false" },
+                { "logmel_model_softmax_reason", "preprocessing transform, loaded with ModelLoader.Load directly" },
+            };
+
+            sessionLogger = new SessionLogger(
+                NewFaceAuModel.WindowFrames,
+                NewFaceAuModel.FeaturesPerFrame,
+                modelInfo);
+        }
+        catch (System.Exception e)
+        {
+            // A recording failure must not stop the experiment from running.
+            sessionLogger = null;
+            Debug.LogError($"Could not start session logging ({e.GetType().Name}: {e.Message}). Continuing without it.");
+        }
+    }
+
+    private void CloseSessionLogger()
+    {
+        sessionLogger?.Dispose();
+        sessionLogger = null;
+    }
+
+    // The Quest pauses the app when the headset is removed rather than quitting it, so
+    // closing only on quit would lose the tail of a recording.
+    void OnApplicationPause(bool paused)
+    {
+        if (paused)
+        {
+            CloseSessionLogger();
+        }
+    }
+
+    void OnApplicationQuit()
+    {
+        CloseSessionLogger();
+    }
+
+    void OnDisable()
+    {
+        CloseSessionLogger();
     }
 
 
@@ -127,7 +189,7 @@ public class ProgressGame : MonoBehaviour
                 }
 
                 // Run prediction loop for this emotion
-                int this_score = await RunPredictionCoroutine(emotion);
+                int this_score = await RunPredictionCoroutine(emotion, trialCounter++);
                 score[emotion] = this_score;
 
                 //hides progress bar
@@ -154,7 +216,7 @@ public class ProgressGame : MonoBehaviour
         }
     }
 
-    private async Awaitable<int> RunPredictionCoroutine(Emotion emotion)
+    private async Awaitable<int> RunPredictionCoroutine(Emotion emotion, int trialId)
     {
         int score = 0;
 
@@ -171,11 +233,16 @@ public class ProgressGame : MonoBehaviour
             float nextTick = Time.time + (intervalMs / 1000f);
 
             // Await prediction
-            var allConfidences = await PredictEmotionAsync();
+            var prediction = await PredictEmotionAsync();
 
-            if (allConfidences.TryGetValue(emotion, out float confidence))
+            // Logged before scoring, and a failed prediction is recorded too, so the CSV
+            // holds one row per tick whether or not tracking was available.
+            sessionLogger?.LogPrediction(trialId, emotion, i, prediction);
+
+            // Unchanged scoring rule: a point when the argmax class is the prompted one.
+            if (prediction != null && prediction.Value.Emotion == emotion)
             {
-                // debug.text = $"[{emotion}] Prediction {i + 1}: {confidence:F2}";
+                // debug.text = $"[{emotion}] Prediction {i + 1}: {prediction.Value.Confidence:F2}";
                 score++;
             }
 
@@ -193,29 +260,11 @@ public class ProgressGame : MonoBehaviour
         return score;
     }
 
-    // Simulated async emotion predictor returning full confidence dictionary
-    private async Awaitable<Dictionary<Emotion, float>> PredictEmotionAsync()
+    // Full prediction: argmax class, all seven scores, and the exact five-frame AU window
+    // that produced them. Null when no window of valid tracking frames was available.
+    private async Awaitable<FacePrediction?> PredictEmotionAsync()
     {
-        // await Awaitable.NextFrameAsync(); // simulate async
-
-        // var emotions = new Dictionary<Emotion, float>();
-        // foreach (var emo in emotionList)
-        // {
-        //     emotions[emo] = Random.Range(0f, 1f);
-        // }
-
-        // // Normalize
-        // float total = 0f;
-        // foreach (var val in emotions.Values) total += val;
-        // foreach (var key in new List<Emotion>(emotions.Keys)) emotions[key] /= total;
-
-        // return emotions;
-
-        var emo = await predictor.Predict();
-        return new Dictionary<Emotion, float>
-        {
-            { emo.Item1, emo.Item2 } // Simulate full confidence for the predicted emotion
-        };
+        return await predictor.PredictDetailed();
     }
 
 

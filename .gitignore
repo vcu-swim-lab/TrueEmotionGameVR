@@ -97,3 +97,9 @@ InitTestScene*.unity*
 
 # Auto-generated scenes by play mode tests
 /[Aa]ssets/[Ii]nit[Tt]est[Ss]cene*.unity*
+
+# Python bytecode from the offline analysis scripts in Analysis/
+__pycache__/
+*.py[cod]
+
+Analysis/

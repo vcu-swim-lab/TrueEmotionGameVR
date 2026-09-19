@@ -522,7 +522,183 @@ than more trials from fewer people, because the claim is about generalising acro
 
 ---
 
-## 9. Superseded protocols
+## 9. EmojiHero offline analogue: `emojihero-personal-v1`
+
+An offline study on the EmojiHeroVR corpus, run by
+[`emojihero_calibration_study.py`](../Analysis/emojihero_calibration_study.py). It exists because
+section 8 needs 6–8 participants that do not exist yet, and EmojiHero already holds 16 in
+participant-disjoint validation and test splits. It tests the same *mechanism* at participant
+scale without collecting a headset session.
+
+**It does not replace the live pilot, and a result here is not a bound on the live effect in
+either direction.** The two are not the same measurement:
+
+| live `session-local-v1` | EmojiHero |
+|---|---|
+| ~10 s trial, 9 scored ticks | 30-frame sequence, 6 scored windows |
+| ring buffer cleared between predictions, so windows share **zero** frames | stride-1 windows share **4 of 5** frames |
+| K then D in one sitting, one headset | pre-recorded sequences across emoji and levels |
+| our prompt protocol | the EmojiHero game protocol |
+
+### Unit mapping
+
+The live *trial* maps to an EmojiHero *sequence*. One complete sequence per emotion is enrolled;
+that participant's remaining sequences of the same emotion are scored. **A sequence is enrolled or
+scored, never split** — splitting it would reproduce the within-trial leak of section 1.2.
+
+### Four methods, one evaluation set
+
+| method | centroids |
+|---|---|
+| `raw` | none; the model's own argmax |
+| `population` | seven centroids from the EmojiHero **training** split |
+| `personal` | seven centroids from this participant's enrolled sequences |
+| `hybrid` | `H_e = alpha * P_e + (1 - alpha) * G_e` |
+
+All four are scored on identical sequences with the identical tie rule, so every difference is a
+difference of decision rule.
+
+**`hybrid − personal` is the comparison that isolates the population term.** `hybrid − raw` cannot:
+the personal term alone would move it. A hybrid that beats raw while matching personal has shown
+nothing about the population centroid.
+
+### Population centroid
+
+Built **only** from the training split — a validation or test sequence entering it would make the
+population term partly personal. The estimator is hierarchical and participant-balanced:
+
+```
+window log-scores   -> sequence centroid          (mean over that sequence's 6 windows)
+sequence centroids  -> participant-emotion        (mean over that person's sequences)
+participant-emotion -> population centroid        (UNWEIGHTED mean over participants)
+```
+
+The last step is the point. The corpus is unbalanced — Anger ranges from 3 to 10 sequences per
+person — so a flat mean over sequences would weight each participant by how prolific they were, and
+the "population" profile would mostly be the few most prolific people. A training participant
+missing an emotion simply does not contribute to that emotion, and the count is recorded; fewer
+than five contributing participants for any emotion is a hard error.
+
+The artifact is `Analysis/results/emojihero_population_centroids.json`. It carries the model
+SHA-256, and a run refuses an artifact built against a different model — the centroids live in that
+model's output space and mean nothing outside it. It is the **only** centroid written to disk,
+because it is an average over twenty people and describes nobody. Personal centroids are never
+written.
+
+### Alpha
+
+One global scalar, swept over `{0.00, 0.05, …, 1.00}`. Not per class, not per participant, not
+quality-dependent: each of those is a second thing fitted on the same eight validation
+participants, and the grid already contains both endpoints — `alpha = 0` is population-only and
+`alpha = 1` is personal-only.
+
+Alpha is chosen on the **validation split only**, by this objective, fixed before it was run:
+
+> the highest participant-equal mean sequence-level seven-class macro-F1 — profiles are averaged
+> within a participant first, then participants are averaged with equal weight
+
+Averaging over all participant-profile pairs at once would weight participants by how many
+evaluation sequences they happen to have, which is the same mistake the population hierarchy above
+exists to avoid. Only eligible participants contribute: a participant who cannot carry a
+seven-class figure cannot help choose the weight one will be read from.
+
+Ties, exact or numerical, go to the **larger** alpha — the more personal and less
+population-dependent of two equal options. **If alpha = 1 is selected, the population centroid adds
+nothing over personal enrolment, and that is the result**, not a reason to pick a different alpha.
+
+### Profile sampling and what its spread means
+
+`MASTER_SEED = 42`, 1000 profiles per participant, selection by
+`sha256(seed|split|participant|emotion|profile_index)` indexed into that cell's sequences sorted by
+`(timestamp, sequence_id)`. Python's `hash()` is process-salted and is never used. The seven
+emotions are chosen **jointly** — a profile is one whole set, because a prediction compares all
+seven centroids at once.
+
+Enrolling a sequence removes it from the evaluation set, so the spread across profiles mixes the
+calibration choice with the evaluation composition. It is reported as **full protocol sensitivity**,
+never as "calibration-sequence sensitivity". Within each profile all four methods are scored on the
+same sequences, so each delta is correctly paired.
+
+### Eligibility
+
+A participant enters the primary seven-class analysis only if **every** emotion has at least two
+sequences — one to enrol and one to score. A general rule over participant-emotion cells; no
+participant ID appears in it. On the current corpus this gives 8 eligible validation participants
+and 7 of the 8 test participants, the exception being the one whose Fear class holds a single
+sequence. That sequence is **not** split, and the resulting missing class invalidates the
+seven-class macro-F1 rather than being dropped from the mean, which would raise it.
+
+### The primary analysis, named before the test split was opened
+
+Exactly one comparison is primary:
+
+| | |
+|---|---|
+| metric | participant-level seven-class sequence macro-F1 |
+| comparison | **hybrid − personal** |
+| inference unit | participant |
+| test | exact two-sided paired sign test over participants |
+| alpha | fixed at the frozen config's `selected_alpha` |
+
+`hybrid − personal` is primary because it is the only comparison that isolates what the
+population term contributed; `hybrid − raw` moves when the personal term alone does the work.
+
+**The calibration profiles are not a sample size.** They are repeated re-draws of the same
+participants' sequences, averaged *within* a participant to give one value per participant. `n`
+is the number of eligible participants. No test is ever computed over profiles.
+
+Secondary, and not promotable afterwards: `hybrid − raw`, `personal − raw`, `population − raw`,
+every accuracy figure, window-level metrics, per-class recall, profile sensitivity, the
+non-overlapping window condition, and all diagnostics.
+
+### Frozen before test
+
+`--split test` requires `--frozen-config` and refuses, by name, `--hybrid-alpha`,
+`--profile-count`, `--windows` and `--frozen-config-output`. There is no `--epsilon`, `--metric`,
+`--seed` or `--primary-profile` flag anywhere in the parser. Alpha, profile count, window
+condition and primary profile index all come from the config, so a config written against
+different code defaults still governs the run.
+
+The config pins the model SHA-256, the population artifact's **semantic** hash, every
+preprocessing and decision setting, the selected alpha (stated twice, and a disagreement is an
+error), the primary profile index and the robustness count. Any drift between the config and the
+running build is a hard error. After the test result is seen, nothing in it may change.
+
+The population pin is a semantic hash rather than a file hash because the artifact records when
+it was built: a rebuild from identical inputs is byte-different but means the same thing, and a
+byte pin would reject a correct rebuild. The hash covers the schema version, class order,
+epsilon, feature space, transform, estimator, preprocessing configuration, model hash, training
+corpus fingerprint and the centroid values — and nothing else.
+
+`--dry-run` performs every check that does not require scoring and then stops, running no model
+over the split. It is safe against `test` before the test phase is approved.
+
+### Provenance, which limits what each split can carry
+
+- The teacher was trained by gradient on the EmojiHero **training** split, which is also where the
+  population centroids come from. The population term therefore describes participants the model
+  was fitted on.
+- The EmojiHero **validation** split contributed 2,310 of the 3,279 windows in the tensor
+  `model.fit` received as `validation_data`, and early stopping monitored `val_accuracy` with
+  best-weight restore. That is **~70.4% of the model-selection signal**. No gradients touched it,
+  but the stopping epoch and the chosen checkpoint did. It is suitable for developing the adapter
+  and choosing alpha; it is not independent evidence about the base model.
+- The EmojiHero **test** split entered neither gradients nor model selection, but has been opened
+  before when reporting teacher performance. It is not untouched. It is confirmatory here only
+  because the adapter and alpha were frozen before it was run.
+
+### VR shadow evaluation
+
+After the frozen EmojiHero test, the same four methods are computed **offline** on the existing
+`session-local-v1` recordings: personal centroids from the 7 K trials as specified in section 3,
+blended with the frozen population artifact, scored on the 14 D trials. Nothing is shown to the
+participant — no prediction, no confidence, no calibration state, no correctness — and the runtime
+decision is unchanged. Wiring a calibrated prediction into gameplay is a separate, separately
+approved step that cannot happen before all three results have been read.
+
+---
+
+## 10. Superseded protocols
 
 Kept so the lineage is readable. None of these are pooled with each other or with the current one.
 
@@ -546,7 +722,7 @@ stamped with it.
 
 ---
 
-## 10. Change control
+## 11. Change control
 
 Any change to the class set, block structure, timings, or feedback policy requires bumping
 `ProtocolVersion` in [`ProtocolRunner.cs`](../Assets/Scripts/ProtocolRunner.cs) to a new value —

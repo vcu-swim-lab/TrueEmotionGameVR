@@ -112,7 +112,15 @@ Analysis/results/*.txt
 !Analysis/results/README.md
 !Analysis/results/.gitkeep
 
+# Two exceptions, both aggregate and both part of a preregistration rather than of the
+# output it will be checked against. Neither carries a per-person quantity: the population
+# centroids are an unweighted mean over twenty training participants and describe nobody,
+# and the frozen config is a specification. They are tracked because a preregistration that
+# is not in the history cannot show it was written before the test split was opened.
+!Analysis/results/emojihero_population_centroids.json
+!Analysis/results/emojihero_hybrid_frozen_config.json
+
 # The verbatim self-reports that acted_exclusions_derived.csv was derived from. A
 # participant's own words about how they felt stay with the corpus, outside version
 # control; the analysis needs only which recordings are excluded and why, in categories.
-Analysis/data/acted_self_report_exclusions.csv
+Analysis/data/*

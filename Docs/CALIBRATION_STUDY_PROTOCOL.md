@@ -238,7 +238,7 @@ adapter and the raw model range over the *same* class set, so "argmax over all c
 
 | Phase | Duration | On screen |
 |---|---|---|
-| Prompt | 2 s | 🤢 Disgust (or the Neutral text) |
+| Prompt | 2 s | `Trial 3 of 21`, then 🤢 Disgust (or the Neutral text) |
 | Countdown | 3 s | 3 → 2 → 1 |
 | **Hold** | **10 s** | 🤢 Hold it (or `Stay relaxed`) |
 | Acknowledgement | 1 s | Recording complete. |
@@ -247,6 +247,30 @@ adapter and the raw model range over the *same* class set, so "argmax over all c
 The model is polled once per second during the hold only: 10 ticks per trial, 210 per session.
 The relax phase is fixed and never skipped — it is what keeps the next trial's opening frames
 from carrying the tail of the previous expression.
+
+### The trial counter, and what it deliberately does not say
+
+The prompt screen opens with `Trial 3 of 21`. Twenty-one trials is long enough that "how much
+is left" is a real question, and leaving it unanswerable is its own distraction.
+
+The counter runs **straight through from 1 to 21**. It does not reset at the block boundary and
+it never names the block. Both are deliberate:
+
+- A counter that restarted at trial 8 would announce precisely where K ends and D begins.
+- Naming the blocks is worse still. `Analysis/block_effect.py` exists to ask whether K and D
+  were the same task performed the same way; a participant who knows which block they are in
+  answers that question for it, and the script can no longer separate *the model read the same
+  face differently* from *the participant performed the second block differently*. The blocks
+  are not counterbalanced — D always follows K in one sitting — so order, practice and fatigue
+  already live inside every K-to-D difference. Expectancy does not need to join them.
+- The word "evaluation" would contradict the intro's `You will not be scored.`
+
+The counter appears on the **prompt only**, never during the hold. The hold is the recorded
+part, and putting fresh text in front of someone while their face is the measurement records
+them reading rather than expressing.
+
+Recordings carry `trial_counter_shown: true` in `session_metadata.json`, so a reader can tell a
+counter session from an earlier one without knowing which build produced which folder.
 
 ### No feedback, in either block
 

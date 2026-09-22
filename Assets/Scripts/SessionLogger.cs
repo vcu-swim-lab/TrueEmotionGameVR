@@ -6,6 +6,8 @@ using System.Text;
 
 using UnityEngine;
 
+using VcuSwimLab.Calibration;
+
 // Writes one self-contained CSV row per face prediction, plus a metadata sidecar
 // describing the session.
 //
@@ -56,12 +58,29 @@ public sealed class SessionLogger : IDisposable
     private readonly int featuresPerFrame;
     private readonly IReadOnlyDictionary<string, string> sessionInfo;
 
+    // Null for the scored game, which has no calibration and no blocks. When it is null the
+    // CSV, the metadata and the file set are exactly what they were before runtime calibration
+    // existed -- a raw-mode *protocol* session still gets the columns, carrying
+    // `calibration_mode=raw`, because "this session was not calibrated" is a fact worth
+    // recording rather than one to be inferred from missing columns.
+    private readonly CalibrationSessionConfig calibration;
+    private readonly PopulationProfile population;
+
+    // Only known once the calibration block closes, so the metadata is rewritten then.
+    private readonly DateTime startedUtc;
+    private readonly IReadOnlyDictionary<string, string> modelInfo;
+    private IReadOnlyDictionary<string, string> calibrationOutcome;
+
     private StreamWriter writer;
+    private StreamWriter trialWriter;
     private readonly StringBuilder row = new();
 
     public string SessionDirectory => sessionDirectory;
     public string CsvPath { get; }
     public string MetadataPath { get; }
+
+    /// <summary>The trial-level file, or null when this session records no calibration.</summary>
+    public string TrialCsvPath { get; }
 
     // `sessionInfo` is written at the top level of the metadata, alongside `session_id`
     // and `utc_start`. It is separate from `modelInfo` on purpose: how a session was run --
@@ -72,13 +91,19 @@ public sealed class SessionLogger : IDisposable
         int windowFrames,
         int featuresPerFrame,
         IReadOnlyDictionary<string, string> modelInfo,
-        IReadOnlyDictionary<string, string> sessionInfo = null)
+        IReadOnlyDictionary<string, string> sessionInfo = null,
+        CalibrationSessionConfig calibration = null,
+        PopulationProfile population = null)
     {
         this.windowFrames = windowFrames;
         this.featuresPerFrame = featuresPerFrame;
         this.sessionInfo = sessionInfo;
+        this.calibration = calibration;
+        this.population = population;
+        this.modelInfo = modelInfo;
 
         var startedUtc = DateTime.UtcNow;
+        this.startedUtc = startedUtc;
 
         // Timestamped id per session: nothing is ever overwritten, and a session that
         // starts in the same second as another still gets its own directory.
@@ -90,6 +115,9 @@ public sealed class SessionLogger : IDisposable
 
         CsvPath = Path.Combine(sessionDirectory, "predictions.csv");
         MetadataPath = Path.Combine(sessionDirectory, "session_metadata.json");
+        TrialCsvPath = calibration != null
+            ? Path.Combine(sessionDirectory, "trials.csv")
+            : null;
 
         // UTF-8 *without* a BOM. `Encoding.UTF8` emits one, which ends up prepended to the
         // first header cell, so a plain `csv.DictReader` sees a column named "﻿timestamp_utc"
@@ -103,7 +131,16 @@ public sealed class SessionLogger : IDisposable
         };
         writer.WriteLine(BuildHeader());
 
-        WriteMetadata(startedUtc, modelInfo);
+        if (TrialCsvPath != null)
+        {
+            trialWriter = new StreamWriter(TrialCsvPath, append: false, new UTF8Encoding(false))
+            {
+                AutoFlush = true,
+            };
+            trialWriter.WriteLine(BuildTrialHeader());
+        }
+
+        WriteMetadata();
 
         Debug.Log($"SessionLogger: writing to {CsvPath}");
     }
@@ -133,21 +170,68 @@ public sealed class SessionLogger : IDisposable
             }
         }
 
+        // Appended after the action units rather than inserted next to `predicted_emotion`,
+        // where a reader would rather find them. Every existing consumer looks columns up by
+        // name -- `session_analysis.load_session` uses a DictReader -- so position does not
+        // matter to a program, but inserting would move 350 columns for no gain and any tool
+        // that did depend on position would break silently. `trials.csv` is the file meant to
+        // be read by eye.
+        foreach (string column in CalibrationColumns)
+        {
+            sb.Append(',').Append(column);
+        }
+
         return sb.ToString();
     }
+
+    /// <summary>
+    /// The per-tick calibration columns, in order. Empty when the session records no
+    /// calibration, which is how the scored game keeps its original schema.
+    /// </summary>
+    private string[] CalibrationColumns => calibration == null
+        ? Array.Empty<string>()
+        : new[]
+        {
+            "calibration_mode",
+            "personal_calibration_enabled",
+            "population_calibration_enabled",
+            "hybrid_alpha",
+            "raw_predicted_emotion",
+            "calibrated_predicted_emotion",
+            "calibrated_winner_similarity",
+            "calibrated_runner_up_similarity",
+            "calibrated_margin",
+            "calibration_valid",
+            "calibration_error",
+        };
+
+    private string BuildTrialHeader()
+        => "session_id,trial_id,block_role,repeat_index,prompted_emotion,"
+           + "calibration_mode,hybrid_alpha,"
+           + "raw_trial_prediction,raw_trial_correct,raw_scored_ticks,raw_trial_tie,"
+           + "calibrated_trial_prediction,calibrated_trial_correct,"
+           + "calibrated_scored_ticks,calibrated_trial_tie,"
+           + "calibration_valid,calibration_error";
 
     // One prediction from a study session, tagged with the block it belongs to.
     //
     // `prediction` is null when no window of valid frames could be collected, which is
     // logged as a row with status `no_tracking` rather than dropped: knowing when tracking
     // failed is part of the diagnosis.
+    /// <param name="calibrated">
+    /// The calibrated decision for this tick, or null when there is none: raw mode, the
+    /// calibration block, an invalid profile, or an untracked tick. A null is written as blank
+    /// calibrated columns rather than as a fallback prediction, so a reader can never mistake
+    /// an uncalibrated tick for a calibrated one.
+    /// </param>
     public void LogPrediction(int trialId, BlockRole blockRole, int repeatIndex,
                               Emotion promptedEmotion, int predictionIndex,
-                              FacePrediction? prediction)
+                              FacePrediction? prediction,
+                              TickCalibration? calibrated = null)
         => LogRow(trialId,
                   Canonical(blockRole),
                   repeatIndex.ToString(CultureInfo.InvariantCulture),
-                  promptedEmotion, predictionIndex, prediction);
+                  promptedEmotion, predictionIndex, prediction, calibrated);
 
     // One prediction from a session that has no calibration and no evaluation block -- the
     // scored game. `block_role` and `repeat_index` are left empty rather than guessed, so an
@@ -156,11 +240,12 @@ public sealed class SessionLogger : IDisposable
     public void LogPrediction(int trialId, Emotion promptedEmotion, int predictionIndex,
                               FacePrediction? prediction)
         => LogRow(trialId, string.Empty, string.Empty,
-                  promptedEmotion, predictionIndex, prediction);
+                  promptedEmotion, predictionIndex, prediction, null);
 
     private void LogRow(int trialId, string blockRole, string repeatIndex,
                         Emotion promptedEmotion, int predictionIndex,
-                        FacePrediction? prediction)
+                        FacePrediction? prediction,
+                        TickCalibration? calibrated)
     {
         if (writer == null)
         {
@@ -189,6 +274,11 @@ public sealed class SessionLogger : IDisposable
                 // scores, per-frame validity, and AU values are all absent
                 int blanks = ClassOrder.Length + windowFrames + (windowFrames * featuresPerFrame);
                 row.Append(',', blanks);
+
+                // The session-level calibration fields are known even here; an untracked tick
+                // still belongs to a session that was configured one way. Only the per-tick
+                // decision is missing, and it is missing because there was nothing to decide.
+                AppendCalibration(null, null);
 
                 writer.WriteLine(row.ToString());
                 return;
@@ -234,6 +324,8 @@ public sealed class SessionLogger : IDisposable
                 }
             }
 
+            AppendCalibration(value.Emotion, calibrated);
+
             writer.WriteLine(row.ToString());
         }
         catch (Exception e)
@@ -243,7 +335,144 @@ public sealed class SessionLogger : IDisposable
         }
     }
 
-    private void WriteMetadata(DateTime startedUtc, IReadOnlyDictionary<string, string> modelInfo)
+    // ------------------------------------------------------------------- calibration
+
+    private string CalibrationValidText
+        => calibrationOutcome != null && calibrationOutcome.TryGetValue("calibration_valid", out string v)
+            ? v
+            : string.Empty;
+
+    private string CalibrationErrorText
+        => calibrationOutcome != null && calibrationOutcome.TryGetValue("calibration_error", out string v)
+            ? v
+            : string.Empty;
+
+    /// <summary>
+    /// The calibration tail of a prediction row.
+    /// </summary>
+    /// <remarks>
+    /// Writes nothing at all when the session records no calibration, which is what keeps the
+    /// scored game's CSV byte-identical to the one it wrote before any of this existed.
+    ///
+    /// `calibration_valid` and `calibration_error` are blank on calibration-block rows and
+    /// filled on evaluation-block rows, because that is literally when they became known: the
+    /// profile is sealed between the two blocks. The metadata carries the final answer for a
+    /// reader who wants it without scanning rows.
+    /// </remarks>
+    private void AppendCalibration(Emotion? rawPrediction, TickCalibration? calibrated)
+    {
+        if (calibration == null)
+        {
+            return;
+        }
+
+        row.Append(',').Append(calibration.ModeName);
+        row.Append(',').Append(calibration.PersonalEnabled ? "true" : "false");
+        row.Append(',').Append(calibration.PopulationEnabled ? "true" : "false");
+        row.Append(',').Append(calibration.AlphaText);
+
+        // An explicit alias for `predicted_emotion`. Once calibrated columns sit beside it,
+        // "predicted" stops being self-explanatory, and a reader comparing methods should not
+        // have to know which of the two columns is the untouched model.
+        row.Append(',').Append(rawPrediction.HasValue
+            ? Escape(rawPrediction.Value.ToString())
+            : string.Empty);
+
+        if (calibrated.HasValue && calibrated.Value.Scored)
+        {
+            var decision = calibrated.Value;
+            row.Append(',').Append(Escape(ClassOrder[decision.ClassIndex].ToString()));
+            row.Append(',').Append(Format(decision.WinnerSimilarity));
+            row.Append(',').Append(Format(decision.RunnerUpSimilarity));
+            row.Append(',').Append(Format(decision.Margin));
+        }
+        else
+        {
+            // Four blank fields: no calibrated class, no similarities, no margin. Deliberately
+            // not the raw prediction repeated -- that would make an uncalibrated tick
+            // indistinguishable from one the calibration happened to agree with.
+            row.Append(",,,,");
+        }
+
+        row.Append(',').Append(CalibrationValidText);
+        row.Append(',').Append(Escape(CalibrationErrorText));
+    }
+
+    /// <summary>
+    /// Record what happened when the calibration block closed, and rewrite the metadata.
+    /// </summary>
+    /// <remarks>
+    /// Called once, between the two blocks. Everything here is only knowable then: whether
+    /// nine ticks arrived for all seven states, whether the centroids came out finite, and
+    /// what went wrong if not. Rewriting the whole metadata file rather than appending keeps
+    /// it a single valid JSON document at every moment, which matters because a session that
+    /// is interrupted mid-way still has to be readable.
+    /// </remarks>
+    public void RecordCalibrationOutcome(IReadOnlyDictionary<string, string> outcome)
+    {
+        calibrationOutcome = outcome;
+        WriteMetadata();
+    }
+
+    /// <summary>One trial's raw and calibrated majority votes.</summary>
+    /// <remarks>
+    /// A second file rather than more columns on the prediction rows. A trial-level fact
+    /// repeated across ten tick rows is a fact that can disagree with itself, and this is the
+    /// file a person actually opens to see what a session did.
+    /// </remarks>
+    public void LogTrial(int trialId, BlockRole blockRole, int repeatIndex,
+                         Emotion promptedEmotion,
+                         TrialVote raw, TrialVote calibrated)
+    {
+        if (trialWriter == null)
+        {
+            return;
+        }
+
+        try
+        {
+            row.Clear();
+            row.Append(Escape(sessionId));
+            row.Append(',').Append(trialId.ToString(CultureInfo.InvariantCulture));
+            row.Append(',').Append(Canonical(blockRole));
+            row.Append(',').Append(repeatIndex.ToString(CultureInfo.InvariantCulture));
+            row.Append(',').Append(Escape(promptedEmotion.ToString()));
+            row.Append(',').Append(calibration.ModeName);
+            row.Append(',').Append(calibration.AlphaText);
+
+            AppendTrialVote(raw, promptedEmotion);
+            AppendTrialVote(calibrated, promptedEmotion);
+
+            row.Append(',').Append(CalibrationValidText);
+            row.Append(',').Append(Escape(CalibrationErrorText));
+
+            trialWriter.WriteLine(row.ToString());
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"SessionLogger: failed to write trial row " +
+                           $"({e.GetType().Name}: {e.Message})");
+        }
+    }
+
+    private void AppendTrialVote(TrialVote vote, Emotion prompted)
+    {
+        if (!vote.Scorable)
+        {
+            // prediction, correct, scored ticks, tie
+            row.Append(",,,").Append(vote.ScoredTicks.ToString(CultureInfo.InvariantCulture))
+               .Append(',');
+            return;
+        }
+
+        var predicted = ClassOrder[vote.ClassIndex];
+        row.Append(',').Append(Escape(predicted.ToString()));
+        row.Append(',').Append(predicted == prompted ? '1' : '0');
+        row.Append(',').Append(vote.ScoredTicks.ToString(CultureInfo.InvariantCulture));
+        row.Append(',').Append(vote.TieOccurred ? "true" : "false");
+    }
+
+    private void WriteMetadata()
     {
         try
         {
@@ -281,6 +510,8 @@ public sealed class SessionLogger : IDisposable
             }
             sb.AppendLine("  ],");
 
+            WriteCalibrationMetadata(sb);
+
             sb.AppendLine("  \"models\": {");
             int written = 0;
             foreach (var kv in modelInfo)
@@ -305,7 +536,22 @@ public sealed class SessionLogger : IDisposable
             sb.AppendLine("    \"generation\": \"monotonic count of valid frames pushed into the ring buffer\",");
             sb.AppendLine("    \"score_<Class>\": \"model output for that class, in class_order\",");
             sb.AppendLine("    \"frame_<f>_valid\": \"always 1 for logged windows; invalid frames are dropped upstream\",");
-            sb.AppendLine("    \"frame_<f>_au_<a>\": \"action unit a of window frame f, frame 0 oldest\"");
+            sb.Append("    \"frame_<f>_au_<a>\": \"action unit a of window frame f, frame 0 oldest\"");
+            sb.AppendLine(calibration != null ? "," : "");
+            if (calibration != null)
+            {
+                sb.AppendLine("    \"calibration_mode\": \"raw, personal, population or hybrid; fixed at session start\",");
+                sb.AppendLine("    \"personal_calibration_enabled\": \"the first operator checkbox, as it was at session start\",");
+                sb.AppendLine("    \"population_calibration_enabled\": \"the second operator checkbox, as it was at session start\",");
+                sb.AppendLine("    \"hybrid_alpha\": \"the frozen blend weight on the personal term; empty outside hybrid mode\",");
+                sb.AppendLine("    \"raw_predicted_emotion\": \"the untouched model argmax; equal to predicted_emotion, named so the two methods are distinguishable\",");
+                sb.AppendLine("    \"calibrated_predicted_emotion\": \"nearest centroid under the active mode; blank in raw mode, in the calibration block, on an untracked tick, and when the profile is invalid\",");
+                sb.AppendLine("    \"calibrated_winner_similarity\": \"cosine similarity to the winning centroid\",");
+                sb.AppendLine("    \"calibrated_runner_up_similarity\": \"cosine similarity to the second-placed centroid\",");
+                sb.AppendLine("    \"calibrated_margin\": \"winner minus runner-up; a small value marks a tick that nearly went the other way\",");
+                sb.AppendLine("    \"calibration_valid\": \"true once a usable profile was sealed; blank on calibration-block rows, which were written before the seal\",");
+                sb.AppendLine("    \"calibration_error\": \"why the profile is unusable, empty when it is fine\"");
+            }
             sb.AppendLine("  },");
             sb.AppendLine("  \"notes\": [");
             sb.AppendLine("    \"Face scores are probabilities: the face graph already ends in Softmax and no second one is appended.\",");
@@ -324,10 +570,108 @@ public sealed class SessionLogger : IDisposable
         }
     }
 
+    /// <summary>
+    /// The calibration block of the metadata: how this session was configured, which artifact
+    /// it used, and how the calibration block turned out.
+    /// </summary>
+    /// <remarks>
+    /// Provenance and decisions only. The personal centroid vectors and the population
+    /// centroid values are deliberately absent from every file this project writes: a personal
+    /// centroid is a biometric description of one identifiable participant, and the population
+    /// profile already lives in the repository under its own hash. What a reader needs in
+    /// order to interpret a result -- which mode, which alpha, which artifact, whether the
+    /// profile was valid -- is all here, and none of it is a face.
+    /// </remarks>
+    private void WriteCalibrationMetadata(StringBuilder sb)
+    {
+        if (calibration == null)
+        {
+            return;
+        }
+
+        sb.AppendLine("  \"calibration\": {");
+
+        var fields = new List<KeyValuePair<string, string>>
+        {
+            new("mode", calibration.ModeName),
+            new("personal_calibration_enabled", calibration.PersonalEnabled ? "true" : "false"),
+            new("population_calibration_enabled", calibration.PopulationEnabled ? "true" : "false"),
+            new("hybrid_alpha", calibration.AlphaText),
+            new("hybrid_alpha_is_frozen",
+                "true; an experimental constant selected on the EmojiHero validation split "
+                + "before the test split was opened, and not settable from the inspector, the "
+                + "command line or a config file"),
+            new("epsilon", CalibrationMath.Epsilon.ToString("R", CultureInfo.InvariantCulture)),
+            new("feature_space", CalibrationMath.FeatureSpaceName),
+            new("transform", CalibrationMath.TransformName),
+            new("metric", CalibrationMath.MetricName),
+            new("estimator", "nearest centroid; centroid is the mean of the scored ticks' "
+                             + "log-score vectors"),
+            new("class_order", string.Join(", ", ClassOrder)),
+            new("personal_centroid_tick_indices",
+                $"{PersonalCentroidBuilder.FirstScoredTick}-{PersonalCentroidBuilder.LastScoredTick} "
+                + "inclusive; tick 0 is a transition sample and is excluded"),
+            new("personal_centroid_required_ticks",
+                PersonalCentroidBuilder.RequiredTicksPerCentroid.ToString(CultureInfo.InvariantCulture)),
+            new("runtime_calibration_version", RuntimeCalibrator.ImplementationVersion),
+            // Console logging, not an on-headset overlay. The participant is shown nothing in
+            // any mode, and this field must not be read as saying otherwise.
+            new("debug_logging_enabled", calibration.DebugLoggingEnabled ? "true" : "false"),
+            new("participant_feedback_shown",
+                "none, in every mode: no prediction, no correctness, no score"),
+            new("trial_majority_tie_rule",
+                "most ticks -> the trial's final tracked tick -> first tied class in class order"),
+        };
+
+        if (population != null)
+        {
+            fields.Add(new("population_artifact_schema_version", population.SchemaVersion));
+            fields.Add(new("population_artifact_semantic_sha256", population.SemanticSha256));
+            fields.Add(new("population_artifact_conversion_sha256", population.ConversionSha256));
+            fields.Add(new("population_artifact_model_sha256", population.ModelSha256));
+            fields.Add(new("population_artifact_source_split", population.SourceSplit));
+            fields.Add(new("population_artifact_estimator", population.Estimator));
+            fields.Add(new("population_artifact_participants",
+                           population.ParticipantCount.ToString(CultureInfo.InvariantCulture)));
+        }
+        else
+        {
+            fields.Add(new("population_artifact", "not loaded; this mode does not use one"));
+        }
+
+        if (calibrationOutcome != null)
+        {
+            foreach (var kv in calibrationOutcome) fields.Add(kv);
+        }
+        else
+        {
+            fields.Add(new("calibration_valid",
+                           "not yet sealed when this file was written; the calibration block "
+                           + "had not finished"));
+        }
+
+        for (int i = 0; i < fields.Count; ++i)
+        {
+            sb.Append("    \"").Append(JsonEscape(fields[i].Key)).Append("\": \"")
+              .Append(JsonEscape(fields[i].Value)).Append('"');
+            sb.AppendLine(i < fields.Count - 1 ? "," : "");
+        }
+
+        sb.AppendLine("  },");
+    }
+
     private static string Format(float value)
     {
         // G9 round-trips a Single exactly.
         return value.ToString("G9", CultureInfo.InvariantCulture);
+    }
+
+    private static string Format(double value)
+    {
+        // G17 round-trips a Double exactly. Similarities and margins are computed in double,
+        // and a parity check that compares the runtime against a recomputation cannot afford
+        // to lose bits on the way to the file.
+        return value.ToString("G17", CultureInfo.InvariantCulture);
     }
 
     private static string Escape(string value)
@@ -358,23 +702,32 @@ public sealed class SessionLogger : IDisposable
 
     public void Dispose()
     {
-        if (writer == null)
+        // The trial file is closed even if the prediction file was already closed, so an
+        // interrupted session does not leave one of the two open.
+        Close(ref trialWriter, "trials.csv");
+        Close(ref writer, "predictions.csv");
+    }
+
+    private static void Close(ref StreamWriter handle, string what)
+    {
+        if (handle == null)
         {
             return;
         }
 
         try
         {
-            writer.Flush();
-            writer.Dispose();
+            handle.Flush();
+            handle.Dispose();
         }
         catch (Exception e)
         {
-            Debug.LogError($"SessionLogger: failed to close ({e.GetType().Name}: {e.Message})");
+            Debug.LogError($"SessionLogger: failed to close {what} " +
+                           $"({e.GetType().Name}: {e.Message})");
         }
         finally
         {
-            writer = null;
+            handle = null;
         }
     }
 }

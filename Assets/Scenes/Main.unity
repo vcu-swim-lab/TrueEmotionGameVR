@@ -698,6 +698,7 @@ GameObject:
   - component: {fileID: 964688080}
   - component: {fileID: 964688079}
   - component: {fileID: 964688081}
+  - component: {fileID: 964688082}
   m_Layer: 7
   m_Name: Canvas
   m_TagString: Untagged
@@ -868,7 +869,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1e701289fcb9a714db0f5f067a0c54c1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  faceModel: {fileID: 5022602860645237092, guid: a9c2cc39aed14165be305ff6d5e65e1f, type: 3}
+  faceModel: {fileID: 5022602860645237092, guid: 9bc9031a9f212a649a8c15ee7ac6f32a, type: 3}
 --- !u!114 &964688081
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -888,6 +889,21 @@ MonoBehaviour:
   relaxSeconds: 4
   randomizationSeed: 0
   fastRehearsal: 0
+--- !u!114 &964688082
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 964688070}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9b1f664d04035ce4dabcfa384cc6eff6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  enablePersonalCalibration: 0
+  enableEmojiHeroPopulationCalibration: 0
+  enableCalibrationDebugLogging: 0
 --- !u!1 &1066909192
 GameObject:
   m_ObjectHideFlags: 0

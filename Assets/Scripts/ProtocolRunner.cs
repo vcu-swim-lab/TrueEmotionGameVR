@@ -5,6 +5,8 @@ using System.Linq;
 using TMPro;
 using UnityEngine;
 
+using VcuSwimLab.Calibration;
+
 using Random = System.Random;
 
 // Finite session runner for the session-local calibration study.
@@ -30,6 +32,7 @@ using Random = System.Random;
 [RequireComponent(typeof(NewFaceAuModel))]
 [RequireComponent(typeof(DeviceManager))]
 [RequireComponent(typeof(OVRFaceExpressions))]
+[RequireComponent(typeof(RuntimeCalibrationSettings))]
 public class ProtocolRunner : MonoBehaviour
 {
     // Bump when anything that changes the meaning of a recording changes: the class set,
@@ -112,6 +115,25 @@ public class ProtocolRunner : MonoBehaviour
             ? "Stay relaxed"
             : $"{EmotionToEmoji[emotion]}\n\nHold it";
 
+    // A position marker on the prompt screen: "Trial 3 of 21". Twenty-one trials is long
+    // enough that "how much is left" is a real question, and leaving it unanswerable is its
+    // own distraction.
+    //
+    // It counts straight through the session and deliberately does NOT reset at the block
+    // boundary, nor name the block. A counter that restarted at trial 8 would announce
+    // exactly where calibration ends and evaluation begins, and a participant who knows
+    // which block they are in produces the K-versus-D difference that
+    // `Analysis/block_effect.py` exists to detect -- at which point that script can no
+    // longer separate "the model read the same face differently" from "the participant
+    // performed the second block differently". The word "evaluation" would also contradict
+    // the intro's promise that nothing here is scored.
+    //
+    // Shown on the prompt only, never during the hold. The hold is the part that is
+    // recorded, and putting fresh text in front of someone while their face is the
+    // measurement records them reading rather than expressing.
+    private string TrialCounter(PlannedTrial trial) =>
+        $"Trial {trial.TrialId + 1} of {Plan.Count}";
+
     // One prompt, resolved before the session starts so the whole schedule is fixed and
     // recordable in advance rather than decided trial by trial.
     public readonly struct PlannedTrial
@@ -136,7 +158,21 @@ public class ProtocolRunner : MonoBehaviour
     private SessionLogger sessionLogger;
     private int seedUsed;
 
+    private RuntimeCalibrationSettings calibrationSettings;
+    private CalibrationSessionConfig calibrationConfig;
+    private PopulationProfile populationProfile;
+    private RuntimeCalibrator calibrator;
+
     public IReadOnlyList<PlannedTrial> Plan { get; private set; }
+
+    // The class order every part of this study agrees on: the `Emotion` enum, the CSV's
+    // `score_<Class>` columns, the population artifact, and the seven rows of every centroid
+    // matrix. `CheckClassOrder` below refuses to run if they ever stop agreeing, because a
+    // permutation would relabel every centroid without changing a single number.
+    private static readonly string[] ClassOrder =
+    {
+        "Anger", "Disgust", "Fear", "Happiness", "Neutral", "Sadness", "Surprise",
+    };
 
     void Start()
     {
@@ -157,6 +193,38 @@ public class ProtocolRunner : MonoBehaviour
         }
 
         predictor = GetComponent<NewFaceAuModel>();
+
+        // Explicit rather than trusted to `[RequireComponent]`. That attribute adds the
+        // component when this one is *added* in the editor; it does nothing for a GameObject
+        // already serialised in a scene, so a scene saved before the attribute existed opens
+        // with the component missing and no warning. Left to `GetComponent` alone, the first
+        // symptom would be a NullReferenceException partway through `RunSession`, after the
+        // participant had already been greeted.
+        //
+        // `== null` rather than `is null` or `??`: UnityEngine.Object overloads `==`, and the
+        // null-propagating operators bypass that overload, so a destroyed or unassigned
+        // reference would not be recognised as missing.
+        calibrationSettings = GetComponent<RuntimeCalibrationSettings>();
+        if (calibrationSettings == null)
+        {
+            Debug.LogError(
+                $"{nameof(ProtocolRunner)}: this GameObject ('{name}') has no " +
+                $"{nameof(RuntimeCalibrationSettings)} component, so there is no calibration " +
+                "configuration to read and the session cannot start.\n" +
+                $"Add {nameof(RuntimeCalibrationSettings)} to '{name}' in the scene and save " +
+                "it. Both of its checkboxes default to off, which reproduces the raw-mode " +
+                "behaviour this protocol had before runtime calibration existed.\n" +
+                "`Assets/Tests/EditMode/SceneWiringTests.cs` checks this at the scene level " +
+                "so it fails in CI rather than in front of a participant.");
+            enabled = false;
+            return;
+        }
+
+        if (!CheckClassOrder())
+        {
+            enabled = false;
+            return;
+        }
 
         seedUsed = randomizationSeed != 0
             ? randomizationSeed
@@ -220,6 +288,43 @@ public class ProtocolRunner : MonoBehaviour
         return plan;
     }
 
+    // Every centroid is a row in a matrix and every score is a column, and both are indexed by
+    // this order. If the `Emotion` enum were ever reordered, the population artifact's rows
+    // would keep their names while silently meaning different classes, and the resulting
+    // numbers would look entirely ordinary. Cheap to check once; impossible to notice later.
+    private static bool CheckClassOrder()
+    {
+        var declared = (Emotion[])Enum.GetValues(typeof(Emotion));
+
+        if (declared.Length != ClassOrder.Length)
+        {
+            Debug.LogError($"{nameof(ProtocolRunner)}: the Emotion enum has {declared.Length} " +
+                           $"members but the study's class order has {ClassOrder.Length}.");
+            return false;
+        }
+
+        for (int i = 0; i < ClassOrder.Length; ++i)
+        {
+            if ((int)declared[i] != i || declared[i].ToString() != ClassOrder[i])
+            {
+                Debug.LogError($"{nameof(ProtocolRunner)}: Emotion.{declared[i]} is at index " +
+                               $"{(int)declared[i]} but the study's class order puts " +
+                               $"'{ClassOrder[i]}' there. Every centroid would be mislabelled.");
+                return false;
+            }
+
+            if (PopulationProfile.ExpectedClassOrder[i] != ClassOrder[i])
+            {
+                Debug.LogError($"{nameof(ProtocolRunner)}: the population artifact expects " +
+                               $"'{PopulationProfile.ExpectedClassOrder[i]}' at index {i}, " +
+                               $"this protocol has '{ClassOrder[i]}'.");
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private void StartSessionLogger()
     {
         try
@@ -253,6 +358,12 @@ public class ProtocolRunner : MonoBehaviour
                 { "evaluation_passes", EvaluationPasses.ToString() },
                 { "evaluation_repeats", EvaluationPasses.ToString() },
 
+                // What the participant saw, recorded so the difference is machine-detectable.
+                // Recordings made before this field exists did not show a counter; a reader
+                // comparing them against later ones can tell, without having to know which
+                // build produced which folder.
+                { "trial_counter_shown", "true" },
+
                 { "ticks_per_trial", (fastRehearsal ? 3 : TicksPerTrial).ToString() },
                 { "fast_rehearsal", fastRehearsal ? "true" : "false" },
                 { "self_report", "not collected (deliberate; no controller in this study)" },
@@ -262,7 +373,9 @@ public class ProtocolRunner : MonoBehaviour
                 NewFaceAuModel.WindowFrames,
                 NewFaceAuModel.FeaturesPerFrame,
                 modelInfo,
-                sessionInfo);
+                sessionInfo,
+                calibrationConfig,
+                populationProfile);
         }
         catch (Exception e)
         {
@@ -318,6 +431,16 @@ public class ProtocolRunner : MonoBehaviour
         Debug.Log($"{nameof(ProtocolRunner)}: {Plan.Count} trials, " +
                   $"seed {seedUsed}, protocol {ProtocolVersion}");
 
+        // Read once, here, and never again. Everything downstream holds this object rather
+        // than the component, so a checkbox toggled mid-session cannot reach the session.
+        calibrationConfig = calibrationSettings.LockForSession();
+        Debug.Log($"{nameof(ProtocolRunner)}: calibration {calibrationConfig}");
+
+        if (!await PrepareCalibration())
+        {
+            return;
+        }
+
         StartSessionLogger();
         if (sessionLogger == null)
         {
@@ -339,7 +462,22 @@ public class ProtocolRunner : MonoBehaviour
 
         foreach (var trial in Plan)
         {
+            // The profile is sealed on the way into the first evaluation trial, which is the
+            // moment the calibration block is complete. Keyed on the role rather than on a
+            // trial number so it stays correct if the block sizes ever change.
+            if (trial.Role == BlockRole.Evaluation && !calibrator.IsSealed)
+            {
+                SealCalibration();
+            }
+
             await RunTrial(trial);
+        }
+
+        // A plan with no evaluation block would otherwise finish unsealed, leaving the
+        // metadata saying the calibration was never closed.
+        if (!calibrator.IsSealed)
+        {
+            SealCalibration();
         }
 
         Show("Session complete.\n\nThank you.");
@@ -348,11 +486,116 @@ public class ProtocolRunner : MonoBehaviour
         CloseSessionLogger();
     }
 
+    /// <summary>
+    /// Load whatever the configured mode needs and build the calibrator, or refuse to run.
+    /// </summary>
+    /// <remarks>
+    /// Everything that can be known before the first trial is checked before the first trial.
+    /// A population or hybrid session whose artifact is missing, tampered with, or built
+    /// against another model must not start at all: a session that quietly scored raw would be
+    /// filed as a calibrated one, and pooling it with real ones is exactly the error the
+    /// artifact hashes exist to prevent.
+    /// </remarks>
+    private async Awaitable<bool> PrepareCalibration()
+    {
+        // A rehearsal shortens every trial to three ticks, so no class can reach the nine a
+        // centroid needs. Rather than let the operator discover that at the seal, after a
+        // participant has sat through the whole thing, refuse the combination up front.
+        if (fastRehearsal && CalibrationModes.IsCalibrated(calibrationConfig.Mode))
+        {
+            Abort($"FAST REHEARSAL cannot be combined with {calibrationConfig.ModeName} " +
+                  "calibration: a rehearsal trial records three ticks and a centroid needs " +
+                  $"{PersonalCentroidBuilder.RequiredTicksPerCentroid}. Turn one of the two off.");
+            return false;
+        }
+
+        if (calibrationConfig.NeedsPopulationArtifact)
+        {
+            try
+            {
+                populationProfile = await calibrationSettings.LoadPopulationProfileAsync();
+            }
+            catch (Exception e)
+            {
+                Abort($"the {calibrationConfig.ModeName} mode needs the EmojiHero population " +
+                      $"profile and it could not be loaded.\n{e.Message}");
+                return false;
+            }
+        }
+
+        try
+        {
+            calibrator = RuntimeCalibrator.Create(
+                calibrationConfig.Mode, ClassOrder, populationProfile);
+        }
+        catch (CalibrationConfigurationException e)
+        {
+            Abort($"calibration is misconfigured.\n{e.Message}");
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Close the calibration block, and record what came of it.
+    /// </summary>
+    /// <remarks>
+    /// A failed seal does not end the session. The raw recording is still worth having -- it
+    /// is a complete set of scores and action-unit windows, and the offline analysis can fit
+    /// centroids from it afterwards exactly as it always has -- so the session runs on with
+    /// the calibrated columns left blank, and the failure is written into the metadata, into
+    /// every evaluation row, and into the log. Ending here would throw away a participant's
+    /// visit to punish a tracking dropout.
+    /// </remarks>
+    private void SealCalibration()
+    {
+        calibrator.Seal();
+
+        var counts = calibrator.CalibrationTickCounts();
+        var perClass = new List<string>();
+        for (int c = 0; c < counts.Length; ++c)
+        {
+            perClass.Add($"{ClassOrder[c]}={counts[c]}");
+        }
+
+        var outcome = new Dictionary<string, string>
+        {
+            { "calibration_valid", calibrator.CalibrationValid ? "true" : "false" },
+            { "calibration_error", calibrator.CalibrationError },
+            { "personal_centroid_built", calibrator.PersonalCentroidsBuilt ? "true" : "false" },
+            { "calibration_ticks_per_class", string.Join(", ", perClass) },
+        };
+
+        sessionLogger?.RecordCalibrationOutcome(outcome);
+
+        if (calibrator.CalibrationValid)
+        {
+            Debug.Log($"{nameof(ProtocolRunner)}: calibration sealed, mode " +
+                      $"{calibrationConfig.ModeName}, ticks {string.Join(", ", perClass)}");
+        }
+        else
+        {
+            Debug.LogError($"{nameof(ProtocolRunner)}: CALIBRATION INVALID -- " +
+                           $"{calibrator.CalibrationError}\nThe session continues and the raw " +
+                           "recording stays usable, but no calibrated prediction will be " +
+                           "produced and this recording must not be pooled with valid ones.");
+        }
+    }
+
+    private void Abort(string reason)
+    {
+        Debug.LogError($"{nameof(ProtocolRunner)}: {reason}");
+        Show("Cannot start.\n\nPlease tell the researcher.");
+        enabled = false;
+    }
+
     private async Awaitable RunTrial(PlannedTrial trial)
     {
         // 1. Prompt. Named and pictured for the six performed expressions; worded as rest
-        //    for Neutral, which has no emoji.
-        Show(PromptScreen(trial.Emotion));
+        //    for Neutral, which has no emoji. Carries the trial counter above it -- see
+        //    `TrialCounter` for why it does not name the block.
+        Show($"{TrialCounter(trial)}\n\n{PromptScreen(trial.Emotion)}");
         await Awaitable.WaitForSecondsAsync(Scaled(promptSeconds));
 
         // 2. Countdown, so the expression starts at a known moment rather than drifting
@@ -392,16 +635,50 @@ public class ProtocolRunner : MonoBehaviour
     {
         int ticks = fastRehearsal ? 3 : TicksPerTrial;
 
+        // Ticks 1-9 only, on both sides. The offline analysis scores exactly that window, and
+        // a runtime vote that also counted tick 0 would produce a different trial prediction
+        // from a recomputation of the same recording -- which is the one thing the parity
+        // check exists to make impossible.
+        var rawVotes = new List<TickVote>();
+        var calibratedVotes = new List<TickVote>();
+
         for (int i = 0; i < ticks; ++i)
         {
             float nextTick = Time.time + 1f;
 
             var prediction = await predictor.PredictDetailed();
+            float[] scores = prediction?.Scores;
+
+            TickCalibration? calibrated = null;
+
+            if (trial.Role == BlockRole.Calibration)
+            {
+                // Offered in every mode, including raw and population-only. The calibration
+                // block is recorded identically whatever the mode so that recordings stay
+                // comparable; what differs is whether these ticks become centroids.
+                calibrator.ObserveCalibrationTick((int)trial.Emotion, i, scores);
+            }
+            else if (PersonalCentroidBuilder.IsScoredTick(i))
+            {
+                var decision = calibrator.Classify(i, scores);
+                if (decision.Scored)
+                {
+                    calibrated = decision;
+                    calibratedVotes.Add(new TickVote(i, decision.ClassIndex));
+                }
+            }
+
+            if (prediction.HasValue && PersonalCentroidBuilder.IsScoredTick(i))
+            {
+                rawVotes.Add(new TickVote(i, (int)prediction.Value.Emotion));
+            }
 
             // Logged whether or not tracking held, so a dropout is visible in the file
             // rather than showing up as a missing row.
             sessionLogger?.LogPrediction(trial.TrialId, trial.Role, trial.RepeatIndex,
-                                         trial.Emotion, i, prediction);
+                                         trial.Emotion, i, prediction, calibrated);
+
+            LogCalibrationDebug(trial, i, prediction, calibrated);
 
             float remaining = nextTick - Time.time;
             if (remaining > 0)
@@ -409,5 +686,41 @@ public class ProtocolRunner : MonoBehaviour
                 await Awaitable.WaitForSecondsAsync(remaining);
             }
         }
+
+        sessionLogger?.LogTrial(trial.TrialId, trial.Role, trial.RepeatIndex, trial.Emotion,
+                                TrialMajority.Vote(rawVotes, ClassOrder.Length),
+                                TrialMajority.Vote(calibratedVotes, ClassOrder.Length));
+    }
+
+    /// <summary>
+    /// The development-build debug readout, to the Unity console and nowhere else.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not on the headset panel, and named accordingly. The hold screen is in
+    /// front of the participant while their face *is* the measurement, and the existing
+    /// protocol goes out of its way never to change text during it -- see `TrialCounter`.
+    /// Putting a prediction there would turn the evaluation block into a feedback task and
+    /// contradict the intro's promise that nothing is scored.
+    ///
+    /// The operator reads it over `adb logcat` instead. That keeps the readout available for
+    /// debugging while leaving the participant's experience identical in every mode.
+    /// </remarks>
+    private void LogCalibrationDebug(PlannedTrial trial, int tick,
+                                     FacePrediction? prediction, TickCalibration? calibrated)
+    {
+        if (!calibrationConfig.DebugLoggingEnabled || trial.Role != BlockRole.Evaluation)
+        {
+            return;
+        }
+
+        string raw = prediction.HasValue ? prediction.Value.Emotion.ToString() : "(no tracking)";
+        string calibratedText = calibrated.HasValue && calibrated.Value.Scored
+            ? $"{ClassOrder[calibrated.Value.ClassIndex]} (margin " +
+              $"{calibrated.Value.Margin:F4})"
+            : "(none)";
+
+        Debug.Log($"[calibration debug] trial {trial.TrialId} tick {tick} " +
+                  $"prompted {trial.Emotion} | raw {raw} | " +
+                  $"{calibrationConfig.ModeName} {calibratedText}");
     }
 }

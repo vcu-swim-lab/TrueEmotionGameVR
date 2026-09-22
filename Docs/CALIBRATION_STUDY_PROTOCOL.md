@@ -696,9 +696,157 @@ participant — no prediction, no confidence, no calibration state, no correctne
 decision is unchanged. Wiring a calibrated prediction into gameplay is a separate, separately
 approved step that cannot happen before all three results have been read.
 
+The shadow evaluation remains offline. Section 10 describes the separate runtime path added
+since, which computes a calibrated prediction on the headset and records it. That path still
+shows the participant nothing, and still does not reach gameplay.
+
 ---
 
-## 10. Superseded protocols
+## 10. Runtime calibration on the headset
+
+Sections 3 and 9 describe calibration as an offline reinterpretation of recorded scores. This
+section describes the same arithmetic running on the Quest during the session. It changes what the
+headset computes; it changes nothing about the protocol the participant experiences, and nothing
+about the model.
+
+**The teacher is still never retrained.** Only the interpretation of its seven outputs changes,
+exactly as offline.
+
+### 10.1 Four modes, from two operator toggles
+
+`RuntimeCalibrationSettings`, on the same GameObject as `ProtocolRunner`:
+
+| Enable Personal Calibration | Enable EmojiHero Population Calibration | mode |
+|---|---|---|
+| off | off | `raw` — the untouched argmax, which is what every recording so far holds |
+| on | off | `personal` |
+| off | on | `population` |
+| on | on | `hybrid`, at `alpha = 0.40` |
+
+`alpha` is a compile-time constant. It was selected on the EmojiHero validation split before the
+test split was opened (section 9, "Alpha"), and there is deliberately no inspector field, command
+line or config file that can change it. A session recorded at another alpha would not be a session
+of this study, and the selection curve is flat enough (0.40 against 0.45 differ by 0.00053) that a
+settable knob would invite exactly the re-selection the preregistration rules out.
+
+Both default to **off**, which is `raw`. A session run by someone who never touches these
+checkboxes records exactly what this protocol recorded before runtime calibration existed, and the
+committed scene holds them off.
+
+Both toggles are read once, at session start. Changing one mid-session cannot affect the running
+session: the values are copied into an immutable object and nothing downstream refers back to the
+component.
+
+**The component must be present in the scene, and `[RequireComponent]` does not put it there.**
+That attribute fires when `ProtocolRunner` is added in the editor; it does nothing to a GameObject
+already serialised in a scene. `Main.unity` therefore opened without the component, silently, until
+it was added and saved deliberately. `ProtocolRunner.Start` now refuses to run when it is missing,
+naming the GameObject, and `Assets/Tests/EditMode/SceneWiringTests.cs` asserts the invariant
+against the scene file itself so the failure lands in a test run rather than in front of a
+participant.
+
+### 10.2 The protocol is unchanged, in every mode
+
+The block structure, the timings, the randomisation, the prompts and the trial counter are
+identical whatever the mode. **The calibration block runs and is recorded identically in all four
+modes**, including the two that never use its ticks, so recordings made under different modes stay
+comparable trial for trial.
+
+Feedback policy (section 2, "No feedback, in either block") is unchanged and unconditional. The
+participant is shown no prediction, no correctness, no score and no calibration state in any mode.
+
+A third checkbox, `Enable Calibration Debug Logging`, writes each evaluation tick's decision to the
+Unity console for the operator to read over `adb logcat`. **It draws nothing on the headset panel;
+there is no overlay.** It is named for what it does: the field was briefly
+`showCalibrationDebugOverlay`, which promised a visible readout that did not exist and would have
+led a reader of the metadata to conclude the participant had seen feedback when they had not.
+Development builds only, off by default, recorded as `debug_logging_enabled` alongside an explicit
+`participant_feedback_shown` stating that nothing is shown in any mode.
+
+### 10.3 The seal
+
+On the way into the first evaluation trial, the centroid set is fitted, blended if the mode calls
+for it, and frozen. Nothing reopens it. Ticks 1-9 only, on both sides, matching section 3 exactly:
+a runtime vote that also counted tick 0 would disagree with a recomputation of its own recording.
+
+### 10.4 An unfittable calibration is not a raw session
+
+Personal and hybrid require nine tracked ticks for all seven classes. A shortfall, a missing class,
+a non-finite score or a wrong-width score vector invalidates the profile. The session continues and
+the raw recording stays complete — throwing away a participant's visit over a tracking dropout
+would be the worse error — but no evaluation tick is calibrated, and the reason is written into the
+metadata, into every evaluation row and into the log. Such a session is reported with raw figures
+and an explicit absence where the calibrated ones would be. It is never silently reported as raw.
+
+Population and hybrid additionally require the population artifact, and there the session refuses
+to start at all. A run that silently fell back to raw would be filed as a calibrated session and
+pooled with real ones.
+
+`fastRehearsal` cannot reach nine ticks and is refused in combination with any calibrated mode,
+before the session rather than at the seal.
+
+### 10.5 Provenance of the artifact in the build
+
+`Assets/StreamingAssets/emojihero_population_centroids_unity.json` is a conversion of the frozen
+analysis artifact, produced by `Analysis/export_population_artifact_for_unity.py` and carrying the
+same seven seven-dimensional vectors. It is aggregate model output over twenty training
+participants: no action units, no windows, no individual's centroid, and no EmojiHero raw data
+enters a build.
+
+The build checks, before the first trial: schema version, source schema version, source split
+(`training`), class order, epsilon, feature space, transform, metric, finiteness, a 7x7 shape, the
+recorded model hash against the hash this build expects, the preregistered semantic hash
+`ab1f0a1d...` against a compiled-in constant, and a conversion hash recomputed from the file's own
+contents.
+
+**Stated limitation:** the runtime cannot re-hash the ONNX graph, because Sentis re-serialises it
+at import and the original bytes are not on the device. The end-to-end model pin is the export
+script, which hashes the real file, plus the constant above.
+
+### 10.6 Parity is a requirement, not an expectation
+
+The offline analysis and the headset must produce the same number, and this is enforced in two
+places rather than assumed:
+
+1. `Analysis/fixtures/runtime_calibration_parity.json` is generated by calling the offline
+   functions themselves (`calibration_study.logscore`, `.centroids`, `.classify`, `.trial_vote`) on
+   synthetic sessions, and the C# tests replay it, comparing personal centroids, hybrid centroids,
+   every tick prediction, every similarity and margin, and every trial-majority vote. Changing the
+   offline algorithm changes this fixture and fails the C# until the runtime follows.
+2. `Analysis/runtime_calibration_report.py --verify` refits a real recording offline and compares
+   it against what the headset wrote. A single differing tick or trial is a parity failure and the
+   tool exits non-zero.
+
+Decisions are compared exactly. Magnitudes are compared to a tolerance, because the offline
+pipeline carries float32 and the runtime uses double; on the shipped fixture the two precisions
+disagree about zero of 630 tick predictions.
+
+### 10.7 What is recorded, and what is not
+
+Added to `predictions.csv` (appended, so no existing column moves), to a new `trials.csv`, and to a
+`calibration` block in `session_metadata.json`: the mode, both toggle values, the alpha, the
+feature configuration, the artifact's hashes and source split, the tick indices used, whether the
+personal centroids were built, the per-tick calibrated prediction with its winner and runner-up
+similarities and margin, both trial-majority votes with their tie flags, and the validity flag with
+its reason.
+
+**No centroid is written to any file.** A personal centroid is a biometric description of one
+identifiable participant. The population centroid values are already in the repository under their
+own hash and are not duplicated into results. Section 5's rule is unchanged: what leaves the
+headset is predictions, similarities and provenance.
+
+### 10.8 What switching this on does not establish
+
+Nothing about whether calibration helps. That question still rests on the results in section 9 and
+in `Docs/VR_SHADOW_EVALUATION_REPORT.md`, which disagree with each other in direction and neither
+of which reaches significance at the available sample sizes. This section describes an instrument.
+The decision to deploy a calibrated prediction into gameplay remains a separate, separately
+approved step, and no such wiring exists: the runtime computes the calibrated prediction, records
+it, and shows nobody.
+
+---
+
+## 11. Superseded protocols
 
 Kept so the lineage is readable. None of these are pooled with each other or with the current one.
 
@@ -722,7 +870,7 @@ stamped with it.
 
 ---
 
-## 11. Change control
+## 12. Change control
 
 Any change to the class set, block structure, timings, or feedback policy requires bumping
 `ProtocolVersion` in [`ProtocolRunner.cs`](../Assets/Scripts/ProtocolRunner.cs) to a new value —

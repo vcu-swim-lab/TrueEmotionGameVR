@@ -49,6 +49,96 @@ namespace VcuSwimLab.Calibration.Tests
             Assert.IsTrue(CalibrationModes.IsCalibrated(CalibrationMode.Personal));
             Assert.IsTrue(CalibrationModes.IsCalibrated(CalibrationMode.Population));
             Assert.IsTrue(CalibrationModes.IsCalibrated(CalibrationMode.Hybrid));
+            Assert.IsTrue(CalibrationModes.IsCalibrated(CalibrationMode.Movement));
+        }
+
+        [Test]
+        public void Movement_is_its_own_mode_and_uses_the_personal_score_term()
+        {
+            Assert.AreEqual(CalibrationMode.Movement,
+                            CalibrationModes.FromToggles(false, false, movementEnabled: true));
+            Assert.AreEqual("movement", CalibrationModes.Canonical(CalibrationMode.Movement));
+
+            Assert.IsTrue(CalibrationModes.UsesPersonal(CalibrationMode.Movement));
+            Assert.IsTrue(CalibrationModes.UsesMovement(CalibrationMode.Movement));
+            Assert.IsFalse(CalibrationModes.UsesPopulation(CalibrationMode.Movement));
+
+            Assert.IsFalse(CalibrationModes.UsesMovement(CalibrationMode.Personal));
+            Assert.IsFalse(CalibrationModes.UsesMovement(CalibrationMode.Hybrid));
+        }
+
+        [Test]
+        public void Movement_with_another_checkbox_is_refused_not_resolved()
+        {
+            Assert.Throws<CalibrationConfigurationException>(
+                () => CalibrationModes.FromToggles(true, false, movementEnabled: true));
+            Assert.Throws<CalibrationConfigurationException>(
+                () => CalibrationModes.FromToggles(false, true, movementEnabled: true));
+        }
+    }
+
+    public class MovementMathTests
+    {
+        [Test]
+        public void The_movement_feature_is_the_frame_mean_of_the_63_face_action_units()
+        {
+            var window = new float[3][];
+            for (int f = 0; f < 3; ++f)
+            {
+                window[f] = new float[70];
+                window[f][0] = f;            // 0, 1, 2 -> mean 1
+                window[f][62] = 0.3f;        // last face action unit
+                window[f][63] = 1.0f;        // first tongue value: dropped
+            }
+
+            var feature = CalibrationMath.MovementFeature(window);
+
+            Assert.AreEqual(63, feature.Length);
+            Assert.AreEqual(1.0, feature[0], 1e-12);
+            Assert.AreEqual(0.3f, feature[62], 1e-7);
+        }
+
+        [Test]
+        public void A_bad_window_is_refused()
+        {
+            Assert.Throws<ArgumentNullException>(() => CalibrationMath.MovementFeature(null));
+            Assert.Throws<ArgumentException>(() => CalibrationMath.MovementFeature(new float[0][]));
+            Assert.Throws<ArgumentException>(() => CalibrationMath.MovementFeature(new[] { new float[62] }));
+
+            var poisoned = new[] { new float[70] };
+            poisoned[0][5] = float.NaN;
+            Assert.Throws<ArgumentException>(() => CalibrationMath.MovementFeature(poisoned));
+        }
+
+        [Test]
+        public void The_sum_rule_adds_the_two_cosines()
+        {
+            var score = new[] { new[] { 1.0, 0.0 }, new[] { 0.0, 1.0 } };
+            var movement = new[] { new[] { 1.0, 0.0, 0.0 }, new[] { 0.0, 1.0, 0.0 } };
+
+            // The scores favour class 0 a little; the face is clearly class 1.
+            var result = CalibrationMath.NearestOfSum(
+                score, new[] { 0.6, 0.4 }, movement, new[] { 0.0, 1.0, 0.0 });
+
+            // Hand arithmetic without the 1e-12 norm floor `Normalized` adds, hence 1e-9 rather
+            // than 1e-12. The exact values are pinned against Python by the parity fixture.
+            double s0 = 0.6 / Math.Sqrt(0.52), s1 = 0.4 / Math.Sqrt(0.52);
+            Assert.AreEqual(1, result.ClassIndex);
+            Assert.AreEqual(s1 + 1.0, result.WinnerSimilarity, 1e-9);
+            Assert.AreEqual(s0 + 0.0, result.RunnerUpSimilarity, 1e-9);
+        }
+
+        [Test]
+        public void An_exact_tie_of_sums_goes_to_the_lower_class_index()
+        {
+            var score = new[] { new[] { 1.0, 0.0 }, new[] { 0.0, 1.0 } };
+            var movement = new[] { new[] { 0.0, 1.0 }, new[] { 1.0, 0.0 } };
+
+            var result = CalibrationMath.NearestOfSum(
+                score, new[] { 1.0, 0.0 }, movement, new[] { 1.0, 0.0 });
+
+            Assert.AreEqual(0, result.ClassIndex);
+            Assert.AreEqual(0.0, result.Margin, 1e-12);
         }
     }
 

@@ -78,12 +78,27 @@ namespace VcuSwimLab.Calibration.Tests
             return values;
         }
 
+        /// <summary>A tick's action-unit window, or null when the case carries none.</summary>
+        private static float[][] Window(Dictionary<string, object> tick)
+        {
+            if (!tick.TryGetValue("window", out object value)) return null;
+
+            var frames = MiniJson.AsArray(value, "window");
+            var window = new float[frames.Count][];
+            for (int f = 0; f < frames.Count; ++f)
+            {
+                window[f] = Floats(MiniJson.AsArray(frames[f], $"window[{f}]"));
+            }
+
+            return window;
+        }
+
         // ------------------------------------------------------------------ preconditions
 
         [Test]
         public void The_fixture_was_generated_against_this_build_s_constants()
         {
-            Assert.AreEqual("runtime-calibration-parity-v1", Text(Fixture, "schema_version"));
+            Assert.AreEqual("runtime-calibration-parity-v2", Text(Fixture, "schema_version"));
             Assert.AreEqual(CalibrationMath.Epsilon, Number(Fixture, "epsilon"));
             Assert.AreEqual(CalibrationMath.FrozenHybridAlpha, Number(Fixture, "frozen_alpha"));
             Assert.AreEqual(PersonalCentroidBuilder.RequiredTicksPerCentroid,
@@ -177,6 +192,24 @@ namespace VcuSwimLab.Calibration.Tests
         }
 
         [Test]
+        public void The_movement_feature_matches_python()
+        {
+            var unit = MiniJson.AsObject(MiniJson.Field(
+                MiniJson.AsObject(MiniJson.Field(Fixture, "unit_cases", "fixture"), "unit_cases"),
+                "movement_feature", "unit_cases"), "movement_feature");
+
+            var expected = Doubles(Array(unit, "expected"));
+            var actual = CalibrationMath.MovementFeature(Window(unit));
+
+            Assert.AreEqual(CalibrationMath.FaceActionUnitCount, expected.Length);
+            Assert.AreEqual(expected.Length, actual.Length);
+            for (int i = 0; i < expected.Length; ++i)
+            {
+                Assert.AreEqual(expected[i], actual[i], Tolerance, $"action unit {i}");
+            }
+        }
+
+        [Test]
         public void Every_trial_vote_case_matches_python()
         {
             var cases = MiniJson.AsArray(MiniJson.Field(
@@ -240,7 +273,8 @@ namespace VcuSwimLab.Calibration.Tests
                     {
                         var tick = MiniJson.AsObject(k, "tick");
                         calibrator.ObserveCalibrationTick(
-                            prompted, Integer(tick, "tick"), Floats(Array(tick, "scores")));
+                            prompted, Integer(tick, "tick"), Floats(Array(tick, "scores")),
+                            Window(tick));
                     }
                 }
 
@@ -267,6 +301,7 @@ namespace VcuSwimLab.Calibration.Tests
                 case CalibrationModes.PersonalName: return CalibrationMode.Personal;
                 case CalibrationModes.PopulationName: return CalibrationMode.Population;
                 case CalibrationModes.HybridName: return CalibrationMode.Hybrid;
+                case CalibrationModes.MovementName: return CalibrationMode.Movement;
                 default: throw new AssertionException($"the fixture names an unknown mode '{name}'");
             }
         }
@@ -274,18 +309,35 @@ namespace VcuSwimLab.Calibration.Tests
         private static void AssertCentroids(string name, Dictionary<string, object> expected,
                                             RuntimeCalibrator calibrator)
         {
-            var rows = Array(expected, "centroids");
-            var actual = calibrator.ActiveCentroidsForTesting();
+            AssertMatrix(name, "centroid", Array(expected, "centroids"),
+                         calibrator.ActiveCentroidsForTesting());
 
-            Assert.AreEqual(rows.Count, actual.Length, $"{name}: centroid count");
+            object movement = MiniJson.Field(expected, "movement_centroids", name);
+            if (movement == null)
+            {
+                Assert.IsNull(calibrator.MovementCentroidsForTesting(),
+                              $"{name}: movement centroids exist outside movement mode");
+            }
+            else
+            {
+                AssertMatrix(name, "movement centroid", MiniJson.AsArray(movement, "movement_centroids"),
+                             calibrator.MovementCentroidsForTesting());
+            }
+        }
+
+        private static void AssertMatrix(string name, string what, List<object> rows, double[][] actual)
+        {
+            Assert.IsNotNull(actual, $"{name}: no {what}s");
+            Assert.AreEqual(rows.Count, actual.Length, $"{name}: {what} count");
 
             for (int e = 0; e < rows.Count; ++e)
             {
                 var row = Doubles(MiniJson.AsArray(rows[e], $"centroids[{e}]"));
+                Assert.AreEqual(row.Length, actual[e].Length, $"{name}: {what}[{e}] width");
                 for (int i = 0; i < row.Length; ++i)
                 {
                     Assert.AreEqual(row[i], actual[e][i], Tolerance,
-                                    $"{name}: centroid[{e}][{i}]");
+                                    $"{name}: {what}[{e}][{i}]");
                 }
             }
         }
@@ -317,7 +369,7 @@ namespace VcuSwimLab.Calibration.Tests
                     // drops it from the evaluation split, so the runtime must too.
                     if (!PersonalCentroidBuilder.IsScoredTick(index)) continue;
 
-                    var result = calibrator.Classify(index, Floats(Array(tick, "scores")));
+                    var result = calibrator.Classify(index, Floats(Array(tick, "scores")), Window(tick));
                     Assert.IsTrue(result.Scored, $"{name}: trial {trialId} tick {index}");
 
                     actual.Add((trialId, index, result));

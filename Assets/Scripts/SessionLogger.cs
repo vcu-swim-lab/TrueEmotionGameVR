@@ -195,6 +195,7 @@ public sealed class SessionLogger : IDisposable
             "calibration_mode",
             "personal_calibration_enabled",
             "population_calibration_enabled",
+            "movement_calibration_enabled",
             "hybrid_alpha",
             "raw_predicted_emotion",
             "calibrated_predicted_emotion",
@@ -369,6 +370,7 @@ public sealed class SessionLogger : IDisposable
         row.Append(',').Append(calibration.ModeName);
         row.Append(',').Append(calibration.PersonalEnabled ? "true" : "false");
         row.Append(',').Append(calibration.PopulationEnabled ? "true" : "false");
+        row.Append(',').Append(calibration.MovementEnabled ? "true" : "false");
         row.Append(',').Append(calibration.AlphaText);
 
         // An explicit alias for `predicted_emotion`. Once calibrated columns sit beside it,
@@ -540,14 +542,15 @@ public sealed class SessionLogger : IDisposable
             sb.AppendLine(calibration != null ? "," : "");
             if (calibration != null)
             {
-                sb.AppendLine("    \"calibration_mode\": \"raw, personal, population or hybrid; fixed at session start\",");
+                sb.AppendLine("    \"calibration_mode\": \"raw, personal, population, hybrid or movement; fixed at session start\",");
                 sb.AppendLine("    \"personal_calibration_enabled\": \"the first operator checkbox, as it was at session start\",");
                 sb.AppendLine("    \"population_calibration_enabled\": \"the second operator checkbox, as it was at session start\",");
+                sb.AppendLine("    \"movement_calibration_enabled\": \"the third operator checkbox, as it was at session start; it runs alone\",");
                 sb.AppendLine("    \"hybrid_alpha\": \"the frozen blend weight on the personal term; empty outside hybrid mode\",");
                 sb.AppendLine("    \"raw_predicted_emotion\": \"the untouched model argmax; equal to predicted_emotion, named so the two methods are distinguishable\",");
                 sb.AppendLine("    \"calibrated_predicted_emotion\": \"nearest centroid under the active mode; blank in raw mode, in the calibration block, on an untracked tick, and when the profile is invalid\",");
-                sb.AppendLine("    \"calibrated_winner_similarity\": \"cosine similarity to the winning centroid\",");
-                sb.AppendLine("    \"calibrated_runner_up_similarity\": \"cosine similarity to the second-placed centroid\",");
+                sb.AppendLine("    \"calibrated_winner_similarity\": \"cosine similarity to the winning centroid; in movement mode the sum of the score and movement cosines (0 to 2)\",");
+                sb.AppendLine("    \"calibrated_runner_up_similarity\": \"cosine similarity to the second-placed centroid; a sum of two cosines in movement mode\",");
                 sb.AppendLine("    \"calibrated_margin\": \"winner minus runner-up; a small value marks a tick that nearly went the other way\",");
                 sb.AppendLine("    \"calibration_valid\": \"true once a usable profile was sealed; blank on calibration-block rows, which were written before the seal\",");
                 sb.AppendLine("    \"calibration_error\": \"why the profile is unusable, empty when it is fine\"");
@@ -596,6 +599,7 @@ public sealed class SessionLogger : IDisposable
             new("mode", calibration.ModeName),
             new("personal_calibration_enabled", calibration.PersonalEnabled ? "true" : "false"),
             new("population_calibration_enabled", calibration.PopulationEnabled ? "true" : "false"),
+            new("movement_calibration_enabled", calibration.MovementEnabled ? "true" : "false"),
             new("hybrid_alpha", calibration.AlphaText),
             new("hybrid_alpha_is_frozen",
                 "true; an experimental constant selected on the EmojiHero validation split "
@@ -622,6 +626,12 @@ public sealed class SessionLogger : IDisposable
             new("trial_majority_tie_rule",
                 "most ticks -> the trial's final tracked tick -> first tied class in class order"),
         };
+
+        if (calibration.Mode == CalibrationMode.Movement)
+        {
+            fields.Add(new("movement_feature", CalibrationMath.MovementFeatureName));
+            fields.Add(new("movement_rule", CalibrationMath.MovementRuleName));
+        }
 
         if (population != null)
         {

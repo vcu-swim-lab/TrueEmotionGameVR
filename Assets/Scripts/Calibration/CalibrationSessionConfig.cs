@@ -20,6 +20,7 @@ namespace VcuSwimLab.Calibration
     {
         public bool PersonalEnabled { get; }
         public bool PopulationEnabled { get; }
+        public bool MovementEnabled { get; }
         public CalibrationMode Mode { get; }
 
         /// <summary>
@@ -47,18 +48,29 @@ namespace VcuSwimLab.Calibration
 
         public bool NeedsPopulationArtifact => CalibrationModes.UsesPopulation(Mode);
 
-        private CalibrationSessionConfig(bool personal, bool population, bool debugLogging)
+        private CalibrationSessionConfig(bool personal, bool population, bool movement, bool debugLogging)
         {
+            // First, so an impossible combination never produces a half-built object.
+            Mode = CalibrationModes.FromToggles(personal, population, movement);
             PersonalEnabled = personal;
             PopulationEnabled = population;
+            MovementEnabled = movement;
             DebugLoggingEnabled = debugLogging;
-            Mode = CalibrationModes.FromToggles(personal, population);
         }
 
-        /// <summary>Capture the toggles. Call once, at session start.</summary>
+        /// <summary>Capture the two original toggles, with movement off. Call once, at session start.</summary>
         public static CalibrationSessionConfig Lock(bool personalEnabled, bool populationEnabled,
                                                     bool debugLoggingEnabled)
-            => new CalibrationSessionConfig(personalEnabled, populationEnabled, debugLoggingEnabled);
+            => new CalibrationSessionConfig(personalEnabled, populationEnabled, false, debugLoggingEnabled);
+
+        /// <summary>Capture all three toggles. Call once, at session start.</summary>
+        /// <exception cref="CalibrationConfigurationException">
+        /// Movement ticked together with personal or population.
+        /// </exception>
+        public static CalibrationSessionConfig Lock(bool personalEnabled, bool populationEnabled,
+                                                    bool movementEnabled, bool debugLoggingEnabled)
+            => new CalibrationSessionConfig(personalEnabled, populationEnabled, movementEnabled,
+                                            debugLoggingEnabled);
 
         public string ModeName => CalibrationModes.Canonical(Mode);
 

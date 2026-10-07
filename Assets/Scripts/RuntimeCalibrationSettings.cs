@@ -6,7 +6,7 @@ using UnityEngine.Networking;
 
 using VcuSwimLab.Calibration;
 
-// The two operator checkboxes, and the loader for the artifact one of them needs.
+// The three operator checkboxes, and the loader for the artifact one of them needs.
 //
 // Deliberately its own component rather than two more fields on `ProtocolRunner`. The runner
 // owns the protocol -- the block structure, the timings, the randomisation -- and those are
@@ -36,6 +36,16 @@ public class RuntimeCalibrationSettings : MonoBehaviour
              "result the wrong way. See Docs/VR_SHADOW_EVALUATION_REPORT.md.")]
     [SerializeField] private bool enableEmojiHeroPopulationCalibration = false;
 
+    [Tooltip("Movement calibration. Learns two fingerprints per emotion from the calibration " +
+             "block: the player's typical face (the 63 face action units, averaged over each " +
+             "window) and the personal score centroid. Each evaluation tick goes to the emotion " +
+             "whose two fingerprints it matches best, by the sum of the two cosines.\n\n" +
+             "Runs alone: ticking it unticks the two checkboxes above, and ticking either of " +
+             "those unticks it. It already contains the personal score centroids.\n\n" +
+             "Offline, 9 headset sessions (8 of one person): tick macro-F1 0.730 against 0.647 " +
+             "for personal calibration. See Analysis/exploratory/au_calibration.py.")]
+    [SerializeField] private bool enableMovementCalibration = false;
+
     [Header("Debug")]
     [Tooltip("Write each evaluation tick's calibrated decision to the Unity console, " +
              "readable over `adb logcat`. Development builds only, and off by default.\n\n" +
@@ -44,10 +54,46 @@ public class RuntimeCalibrationSettings : MonoBehaviour
              "block is the measurement. Recorded in the session metadata either way.")]
     [SerializeField] private bool enableCalibrationDebugLogging = false;
 
+    // The movement checkbox as OnValidate last saw it, so it can tell which side was just ticked.
+    [NonSerialized] private bool seenMovement;
+
+    // Movement runs alone. Whichever side was ticked last wins and the other side is cleared,
+    // so the inspector can never show a combination the session would refuse. The session
+    // still checks again at start (`CalibrationSessionConfig.Lock`), because a scene file can
+    // be edited by hand.
+    private void OnValidate()
+    {
+        bool othersOn = enablePersonalCalibration || enableEmojiHeroPopulationCalibration;
+
+        if (enableMovementCalibration && othersOn)
+        {
+            bool movementJustTicked = !seenMovement;
+            if (movementJustTicked)
+            {
+                enablePersonalCalibration = false;
+                enableEmojiHeroPopulationCalibration = false;
+                Debug.LogWarning($"{nameof(RuntimeCalibrationSettings)}: movement calibration runs " +
+                                 "alone, so personal and population calibration were unticked.");
+            }
+            else
+            {
+                enableMovementCalibration = false;
+                Debug.LogWarning($"{nameof(RuntimeCalibrationSettings)}: movement calibration was " +
+                                 "unticked, because it cannot run together with personal or " +
+                                 "population calibration.");
+            }
+        }
+
+        seenMovement = enableMovementCalibration;
+    }
+
     /// <summary>
     /// Read the toggles once. Everything afterwards reads the returned object, so changing a
     /// checkbox mid-session cannot reach the running session.
     /// </summary>
+    /// <exception cref="CalibrationConfigurationException">
+    /// Movement ticked together with personal or population calibration.
+    /// </exception>
     public CalibrationSessionConfig LockForSession()
     {
         bool debug = enableCalibrationDebugLogging && Debug.isDebugBuild;
@@ -60,7 +106,8 @@ public class RuntimeCalibrationSettings : MonoBehaviour
         }
 
         return CalibrationSessionConfig.Lock(
-            enablePersonalCalibration, enableEmojiHeroPopulationCalibration, debug);
+            enablePersonalCalibration, enableEmojiHeroPopulationCalibration,
+            enableMovementCalibration, debug);
     }
 
     /// <summary>

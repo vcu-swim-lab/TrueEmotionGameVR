@@ -15,6 +15,11 @@ namespace VcuSwimLab.Calibration
     /// `Raw` is not a calibration. It is the untouched argmax the protocol has always
     /// recorded, kept as a named mode so a recording says explicitly that calibration was
     /// off rather than leaving a reader to infer it from absent columns.
+    ///
+    /// `Movement` has its own checkbox and excludes the other two. It already contains the
+    /// personal score centroids as one of its two terms, so combining it with `Personal`
+    /// would count that term twice, and no combination with the population profile was
+    /// ever measured.
     /// </remarks>
     public enum CalibrationMode
     {
@@ -22,6 +27,7 @@ namespace VcuSwimLab.Calibration
         Personal = 1,
         Population = 2,
         Hybrid = 3,
+        Movement = 4,
     }
 
     public static class CalibrationModes
@@ -33,10 +39,36 @@ namespace VcuSwimLab.Calibration
         public const string PersonalName = "personal";
         public const string PopulationName = "population";
         public const string HybridName = "hybrid";
+        public const string MovementName = "movement";
 
         /// <summary>The two-checkbox truth table, in one place.</summary>
         public static CalibrationMode FromToggles(bool personalEnabled, bool populationEnabled)
+            => FromToggles(personalEnabled, populationEnabled, false);
+
+        /// <summary>
+        /// The three-checkbox truth table. Movement is exclusive: it runs alone or not at all.
+        /// </summary>
+        /// <exception cref="CalibrationConfigurationException">
+        /// Movement together with either of the other two. Refused rather than resolved by a
+        /// precedence rule, because a session that silently ran a different mode from the one
+        /// the operator ticked would be filed under the wrong method.
+        /// </exception>
+        public static CalibrationMode FromToggles(bool personalEnabled, bool populationEnabled,
+                                                  bool movementEnabled)
         {
+            if (movementEnabled)
+            {
+                if (personalEnabled || populationEnabled)
+                {
+                    throw new CalibrationConfigurationException(
+                        "movement calibration cannot be combined with personal or population "
+                        + "calibration. It already uses the personal score centroids as one of its "
+                        + "two terms. Untick the other checkboxes, or untick movement.");
+                }
+
+                return CalibrationMode.Movement;
+            }
+
             if (personalEnabled && populationEnabled) return CalibrationMode.Hybrid;
             if (personalEnabled) return CalibrationMode.Personal;
             if (populationEnabled) return CalibrationMode.Population;
@@ -51,14 +83,22 @@ namespace VcuSwimLab.Calibration
                 case CalibrationMode.Personal: return PersonalName;
                 case CalibrationMode.Population: return PopulationName;
                 case CalibrationMode.Hybrid: return HybridName;
+                case CalibrationMode.Movement: return MovementName;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(mode), mode, "unmapped calibration mode");
             }
         }
 
-        /// <summary>True when the mode needs personal centroids fitted from the K block.</summary>
+        /// <summary>
+        /// True when the mode needs personal score centroids fitted from the K block. Movement
+        /// does: they are its second term.
+        /// </summary>
         public static bool UsesPersonal(CalibrationMode mode)
-            => mode == CalibrationMode.Personal || mode == CalibrationMode.Hybrid;
+            => mode == CalibrationMode.Personal || mode == CalibrationMode.Hybrid
+               || mode == CalibrationMode.Movement;
+
+        /// <summary>True when the mode needs movement centroids fitted from the K block's windows.</summary>
+        public static bool UsesMovement(CalibrationMode mode) => mode == CalibrationMode.Movement;
 
         /// <summary>True when the mode needs the frozen EmojiHero population artifact.</summary>
         public static bool UsesPopulation(CalibrationMode mode)

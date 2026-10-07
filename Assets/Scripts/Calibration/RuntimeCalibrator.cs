@@ -60,8 +60,12 @@ namespace VcuSwimLab.Calibration
 
         private readonly string[] classNames;
         private readonly PersonalCentroidBuilder builder;
+        private readonly MovementCentroidBuilder movementBuilder;
 
         private double[][] activeCentroids;
+
+        // Movement mode only: the player's typical face per class. Null in every other mode.
+        private double[][] movementCentroids;
 
         public CalibrationMode Mode { get; }
 
@@ -89,6 +93,9 @@ namespace VcuSwimLab.Calibration
         /// </summary>
         public bool PersonalCentroidsBuilt { get; private set; }
 
+        /// <summary>True when movement centroids were fitted, which happens only in movement mode.</summary>
+        public bool MovementCentroidsBuilt { get; private set; }
+
         public IReadOnlyList<string> ClassNames => classNames;
 
         private RuntimeCalibrator(CalibrationMode mode, string[] classNames,
@@ -99,6 +106,7 @@ namespace VcuSwimLab.Calibration
             Population = population;
             Alpha = alpha;
             builder = new PersonalCentroidBuilder(classNames.Length);
+            movementBuilder = new MovementCentroidBuilder(classNames.Length);
         }
 
         /// <summary>
@@ -162,8 +170,12 @@ namespace VcuSwimLab.Calibration
         /// Called in every mode, including raw and population-only. The K block runs and is
         /// recorded identically whatever the mode, so recordings stay comparable across modes;
         /// what changes is whether the collected ticks are ever turned into centroids.
+        ///
+        /// `window` is the tick's action-unit window, oldest frame first. Only movement mode
+        /// keeps it: the other modes never hold a description of the face beyond the scores.
         /// </remarks>
-        public void ObserveCalibrationTick(int classIndex, int tickIndex, IReadOnlyList<float> scores)
+        public void ObserveCalibrationTick(int classIndex, int tickIndex, IReadOnlyList<float> scores,
+                                           IReadOnlyList<float[]> window = null)
         {
             if (IsSealed)
             {
@@ -173,6 +185,11 @@ namespace VcuSwimLab.Calibration
             }
 
             builder.Observe(classIndex, tickIndex, scores);
+
+            if (CalibrationModes.UsesMovement(Mode))
+            {
+                movementBuilder.Observe(classIndex, tickIndex, window);
+            }
         }
 
         /// <summary>
@@ -207,9 +224,22 @@ namespace VcuSwimLab.Calibration
                 PersonalCentroidsBuilt = true;
             }
 
+            if (CalibrationModes.UsesMovement(Mode))
+            {
+                if (!movementBuilder.TryBuild(classNames, out movementCentroids, out string error))
+                {
+                    CalibrationValid = false;
+                    CalibrationError = error;
+                    return;
+                }
+
+                MovementCentroidsBuilt = true;
+            }
+
             switch (Mode)
             {
                 case CalibrationMode.Personal:
+                case CalibrationMode.Movement:
                     activeCentroids = personal;
                     break;
 
@@ -236,8 +266,12 @@ namespace VcuSwimLab.Calibration
         /// itself carried no scores. Each of those is a real state of the recording and none
         /// of them is a fallback to a different method: an unscored tick is logged blank and
         /// contributes no vote, exactly as an untracked tick does in the offline analysis.
+        ///
+        /// In movement mode the tick also needs its action-unit window; without one it is not
+        /// scored. Its winner, runner-up and margin are then sums of two cosines (0 to 2).
         /// </remarks>
-        public TickCalibration Classify(int tickIndex, IReadOnlyList<float> scores)
+        public TickCalibration Classify(int tickIndex, IReadOnlyList<float> scores,
+                                        IReadOnlyList<float[]> window = null)
         {
             if (!IsSealed)
             {
@@ -265,7 +299,31 @@ namespace VcuSwimLab.Calibration
                 return TickCalibration.NotScored;
             }
 
-            var nearest = CalibrationMath.Nearest(activeCentroids, feature);
+            NearestCentroid nearest;
+            if (CalibrationModes.UsesMovement(Mode))
+            {
+                if (window == null)
+                {
+                    return TickCalibration.NotScored;
+                }
+
+                double[] movement;
+                try
+                {
+                    movement = CalibrationMath.MovementFeature(window);
+                }
+                catch (ArgumentException)
+                {
+                    return TickCalibration.NotScored;
+                }
+
+                nearest = CalibrationMath.NearestOfSum(activeCentroids, feature, movementCentroids, movement);
+            }
+            else
+            {
+                nearest = CalibrationMath.Nearest(activeCentroids, feature);
+            }
+
             return new TickCalibration(true, nearest.ClassIndex, nearest.WinnerSimilarity,
                                        nearest.RunnerUpSimilarity, nearest.Margin);
         }
@@ -282,14 +340,22 @@ namespace VcuSwimLab.Calibration
         /// writes -- see `SessionLogger`, which records similarities and margins but no
         /// centroid.
         /// </remarks>
-        public double[][] ActiveCentroidsForTesting()
-        {
-            if (activeCentroids == null) return null;
+        public double[][] ActiveCentroidsForTesting() => Copy(activeCentroids);
 
-            var copy = new double[activeCentroids.Length][];
-            for (int e = 0; e < activeCentroids.Length; ++e)
+        /// <summary>
+        /// The sealed movement centroids, copied; null outside movement mode. For tests only,
+        /// and for the same reason: a movement centroid is a description of a face.
+        /// </summary>
+        public double[][] MovementCentroidsForTesting() => Copy(movementCentroids);
+
+        private static double[][] Copy(double[][] source)
+        {
+            if (source == null) return null;
+
+            var copy = new double[source.Length][];
+            for (int e = 0; e < source.Length; ++e)
             {
-                copy[e] = (double[])activeCentroids[e].Clone();
+                copy[e] = (double[])source[e].Clone();
             }
 
             return copy;

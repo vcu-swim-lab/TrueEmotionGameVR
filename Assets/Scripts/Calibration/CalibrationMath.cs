@@ -274,6 +274,124 @@ namespace VcuSwimLab.Calibration
 
             return new NearestCentroid(best, bestSimilarity, runnerUp, bestSimilarity - runnerUp);
         }
+
+        // ------------------------------------------------------------ movement calibration
+
+        /// <summary>
+        /// The face action units of a window: the first 63 features. The last 7 are tongue
+        /// values, which say nothing about the expression and are left out of the movement
+        /// feature. Mirrors `calibration_study.FACE_AU_COUNT`.
+        /// </summary>
+        public const int FaceActionUnitCount = 63;
+
+        public const string MovementFeatureName =
+            "mean over the window's frames of the first 63 action units (face; tongue excluded)";
+        public const string MovementRuleName =
+            "nearest class by (cosine to the personal log-score centroid) + "
+            + "(cosine to the personal movement centroid); winner, runner-up and margin are these sums";
+
+        /// <summary>
+        /// `calibration_study.movement_feature` for one window: the mean over its frames of each
+        /// face action unit.
+        /// </summary>
+        /// <exception cref="ArgumentException">
+        /// An empty window, a frame narrower than 63 features, or a non-finite value. Refused
+        /// rather than repaired, for the same reason `LogScore` refuses NaN.
+        /// </exception>
+        public static double[] MovementFeature(IReadOnlyList<float[]> window)
+        {
+            if (window == null) throw new ArgumentNullException(nameof(window));
+            if (window.Count == 0)
+            {
+                throw new ArgumentException("the window holds no frames", nameof(window));
+            }
+
+            var sum = new double[FaceActionUnitCount];
+            for (int f = 0; f < window.Count; ++f)
+            {
+                var frame = window[f];
+                if (frame == null || frame.Length < FaceActionUnitCount)
+                {
+                    throw new ArgumentException(
+                        $"frame {f} has {(frame == null ? 0 : frame.Length)} features; the movement "
+                        + $"feature needs at least {FaceActionUnitCount}", nameof(window));
+                }
+
+                for (int a = 0; a < FaceActionUnitCount; ++a)
+                {
+                    double value = frame[a];
+                    if (double.IsNaN(value) || double.IsInfinity(value))
+                    {
+                        throw new ArgumentException(
+                            $"frame {f} action unit {a} is {value}", nameof(window));
+                    }
+
+                    sum[a] += value;
+                }
+            }
+
+            for (int a = 0; a < FaceActionUnitCount; ++a)
+            {
+                sum[a] /= window.Count;
+            }
+
+            return sum;
+        }
+
+        /// <summary>
+        /// Movement calibration's decision: per class, the cosine of the score feature to that
+        /// class's score centroid plus the cosine of the movement feature to its movement
+        /// centroid. The highest sum wins. Mirrors `calibration_study.classify_movement`.
+        /// </summary>
+        /// <remarks>
+        /// Same tie rule as `Nearest`: strictly greater, so an exact tie keeps the lower class
+        /// index, as `np.argsort` on a seven-element row does.
+        /// </remarks>
+        public static NearestCentroid NearestOfSum(double[][] scoreCentroids, double[] scoreFeature,
+                                                   double[][] movementCentroids, double[] movementFeature)
+        {
+            if (scoreCentroids == null) throw new ArgumentNullException(nameof(scoreCentroids));
+            if (movementCentroids == null) throw new ArgumentNullException(nameof(movementCentroids));
+            if (scoreFeature == null) throw new ArgumentNullException(nameof(scoreFeature));
+            if (movementFeature == null) throw new ArgumentNullException(nameof(movementFeature));
+            if (scoreCentroids.Length != movementCentroids.Length)
+            {
+                throw new ArgumentException(
+                    $"{scoreCentroids.Length} score centroids against "
+                    + $"{movementCentroids.Length} movement centroids");
+            }
+            if (scoreCentroids.Length < 2)
+            {
+                throw new ArgumentException(
+                    $"nearest-centroid classification needs at least two centroids, got {scoreCentroids.Length}");
+            }
+
+            var unitScore = Normalized(scoreFeature);
+            var unitMovement = Normalized(movementFeature);
+
+            int best = -1;
+            double bestTotal = double.NegativeInfinity;
+            double runnerUp = double.NegativeInfinity;
+
+            for (int e = 0; e < scoreCentroids.Length; ++e)
+            {
+                double total = Dot(unitScore, Normalized(scoreCentroids[e]))
+                               + Dot(unitMovement, Normalized(movementCentroids[e]));
+
+                if (total > bestTotal)
+                {
+                    runnerUp = bestTotal;
+                    bestTotal = total;
+                    best = e;
+                }
+                else if (total > runnerUp)
+                {
+                    runnerUp = total;
+                }
+            }
+
+            return new NearestCentroid(best, bestTotal, runnerUp, bestTotal - runnerUp);
+        }
     }
 
     /// <summary>One tick's nearest-centroid decision.</summary>

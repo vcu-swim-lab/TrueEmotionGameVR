@@ -311,5 +311,121 @@ namespace VcuSwimLab.Calibration.Tests
         {
             Assert.AreEqual("runtime-calibration-v1", RuntimeCalibrator.ImplementationVersion);
         }
+
+        // ------------------------------------------------------------------ movement
+
+        /// <summary>A 5 x 70 window whose face part moves the given action units.</summary>
+        private static float[][] Window(params int[] moving)
+        {
+            var window = new float[5][];
+            for (int f = 0; f < 5; ++f)
+            {
+                window[f] = new float[70];
+                foreach (int a in moving) window[f][a] = 0.5f;
+                for (int t = 63; t < 70; ++t) window[f][t] = 0.9f;   // tongue: must be ignored
+            }
+
+            return window;
+        }
+
+        /// <summary>Each class moves its own two face action units.</summary>
+        private static float[][] FaceOf(int cls) => Window(cls * 2, cls * 2 + 1);
+
+        private static RuntimeCalibrator SealedMovement(Func<int, float[]> scores)
+        {
+            var calibrator = RuntimeCalibrator.Create(CalibrationMode.Movement, Names, null);
+            for (int cls = 0; cls < Classes; ++cls)
+            {
+                for (int tick = 0; tick < 10; ++tick)
+                {
+                    calibrator.ObserveCalibrationTick(cls, tick, scores(cls), FaceOf(cls));
+                }
+            }
+
+            calibrator.Seal();
+            return calibrator;
+        }
+
+        [Test]
+        public void Movement_mode_builds_score_and_movement_centroids()
+        {
+            var calibrator = SealedMovement(cls => Scores(cls));
+
+            Assert.IsTrue(calibrator.CalibrationValid, calibrator.CalibrationError);
+            Assert.IsTrue(calibrator.PersonalCentroidsBuilt);
+            Assert.IsTrue(calibrator.MovementCentroidsBuilt);
+
+            var movement = calibrator.MovementCentroidsForTesting();
+            Assert.AreEqual(Classes, movement.Length);
+            Assert.AreEqual(CalibrationMath.FaceActionUnitCount, movement[0].Length,
+                            "the tongue values are not part of the movement centroid");
+            Assert.AreEqual(0.5, movement[3][6], 1e-7);
+            Assert.AreEqual(0.0, movement[3][0], 1e-12);
+
+            var tick = calibrator.Classify(1, Scores(5), FaceOf(5));
+            Assert.IsTrue(tick.Scored);
+            Assert.AreEqual(5, tick.ClassIndex);
+            Assert.AreEqual(2.0, tick.WinnerSimilarity, 1e-9, "both cosines are 1 for an exact match");
+        }
+
+        [Test]
+        public void Other_modes_never_build_movement_centroids()
+        {
+            Assert.IsFalse(Sealed(CalibrationMode.Personal).MovementCentroidsBuilt);
+            Assert.IsNull(Sealed(CalibrationMode.Personal).MovementCentroidsForTesting());
+            Assert.IsFalse(Sealed(CalibrationMode.Hybrid, Population).MovementCentroidsBuilt);
+        }
+
+        [Test]
+        public void Movement_mode_refuses_a_population_profile()
+        {
+            Assert.Throws<CalibrationConfigurationException>(
+                () => RuntimeCalibrator.Create(CalibrationMode.Movement, Names, Population));
+        }
+
+        [Test]
+        public void Movement_mode_without_calibration_windows_is_invalid()
+        {
+            // Scores arrive but no windows: the movement term cannot be fitted, and the
+            // session must not quietly fall back to personal-only.
+            var calibrator = RuntimeCalibrator.Create(CalibrationMode.Movement, Names, null);
+            RunCalibrationBlock(calibrator, cls => Scores(cls));
+            calibrator.Seal();
+
+            Assert.IsFalse(calibrator.CalibrationValid);
+            StringAssert.Contains("tracked windows", calibrator.CalibrationError);
+            Assert.IsFalse(calibrator.Classify(1, Scores(0), FaceOf(0)).Scored);
+        }
+
+        [Test]
+        public void A_movement_tick_without_a_window_is_not_scored()
+        {
+            var calibrator = SealedMovement(cls => Scores(cls));
+
+            Assert.IsFalse(calibrator.Classify(1, Scores(2), null).Scored);
+            Assert.IsFalse(calibrator.Classify(1, Scores(2), new[] { new float[10] }).Scored,
+                           "a frame narrower than 63 action units is refused, not padded");
+        }
+
+        [Test]
+        public void Movement_separates_two_emotions_the_scores_cannot()
+        {
+            // The model gives Disgust and Surprise the identical score vector, so their score
+            // centroids coincide and personal calibration has to pick one of them for both.
+            // The faces differ, and the movement term tells them apart.
+            float[] Collapsed(int cls) => cls == 1 ? Scores(6) : Scores(cls);
+
+            var personal = RuntimeCalibrator.Create(CalibrationMode.Personal, Names, null);
+            RunCalibrationBlock(personal, Collapsed);
+            personal.Seal();
+
+            var movement = SealedMovement(Collapsed);
+
+            Assert.AreEqual(personal.Classify(1, Collapsed(1)).ClassIndex,
+                            personal.Classify(1, Collapsed(6)).ClassIndex,
+                            "personal calibration cannot separate identical score vectors");
+            Assert.AreEqual(1, movement.Classify(1, Collapsed(1), FaceOf(1)).ClassIndex);
+            Assert.AreEqual(6, movement.Classify(1, Collapsed(6), FaceOf(6)).ClassIndex);
+        }
     }
 }

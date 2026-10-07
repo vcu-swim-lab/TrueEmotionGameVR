@@ -97,6 +97,48 @@ namespace VcuSwimLab.Calibration.Tests
             Assert.AreEqual("personal", CalibrationSessionConfig.Lock(true, false, false).ModeName);
             Assert.AreEqual("population", CalibrationSessionConfig.Lock(false, true, false).ModeName);
             Assert.AreEqual("hybrid", CalibrationSessionConfig.Lock(true, true, false).ModeName);
+            Assert.AreEqual("movement", CalibrationSessionConfig.Lock(false, false, true, false).ModeName);
+        }
+
+        // ------------------------------------------------------------------ movement
+
+        [Test]
+        public void The_movement_checkbox_alone_is_movement_mode()
+        {
+            var config = CalibrationSessionConfig.Lock(false, false, true, false);
+
+            Assert.AreEqual(CalibrationMode.Movement, config.Mode);
+            Assert.IsTrue(config.MovementEnabled);
+            Assert.IsFalse(config.PersonalEnabled);
+            Assert.IsFalse(config.PopulationEnabled);
+            Assert.IsFalse(config.NeedsPopulationArtifact);
+            Assert.IsTrue(double.IsNaN(config.Alpha));
+            Assert.AreEqual(string.Empty, config.AlphaText);
+        }
+
+        [Test]
+        public void Movement_cannot_be_combined_with_personal_or_population()
+        {
+            // Movement already contains the personal score centroids, so personal + movement
+            // would count them twice; movement + population was never measured.
+            foreach (var (personal, population) in new[] { (true, false), (false, true), (true, true) })
+            {
+                var e = Assert.Throws<CalibrationConfigurationException>(
+                    () => CalibrationSessionConfig.Lock(personal, population, true, false),
+                    $"personal={personal} population={population}");
+                StringAssert.Contains("cannot be combined", e.Message);
+            }
+        }
+
+        [Test]
+        public void The_three_argument_lock_still_means_movement_off()
+        {
+            // Existing callers pass (personal, population, debug). They must keep their meaning.
+            var config = CalibrationSessionConfig.Lock(true, false, true);
+
+            Assert.AreEqual(CalibrationMode.Personal, config.Mode);
+            Assert.IsFalse(config.MovementEnabled);
+            Assert.IsTrue(config.DebugLoggingEnabled);
         }
     }
 }

@@ -433,7 +433,16 @@ public class ProtocolRunner : MonoBehaviour
 
         // Read once, here, and never again. Everything downstream holds this object rather
         // than the component, so a checkbox toggled mid-session cannot reach the session.
-        calibrationConfig = calibrationSettings.LockForSession();
+        try
+        {
+            calibrationConfig = calibrationSettings.LockForSession();
+        }
+        catch (CalibrationConfigurationException e)
+        {
+            Abort($"calibration is misconfigured.\n{e.Message}");
+            return;
+        }
+
         Debug.Log($"{nameof(ProtocolRunner)}: calibration {calibrationConfig}");
 
         if (!await PrepareCalibration())
@@ -564,6 +573,7 @@ public class ProtocolRunner : MonoBehaviour
             { "calibration_valid", calibrator.CalibrationValid ? "true" : "false" },
             { "calibration_error", calibrator.CalibrationError },
             { "personal_centroid_built", calibrator.PersonalCentroidsBuilt ? "true" : "false" },
+            { "movement_centroid_built", calibrator.MovementCentroidsBuilt ? "true" : "false" },
             { "calibration_ticks_per_class", string.Join(", ", perClass) },
         };
 
@@ -649,6 +659,10 @@ public class ProtocolRunner : MonoBehaviour
             var prediction = await predictor.PredictDetailed();
             float[] scores = prediction?.Scores;
 
+            // The exact window the scores were computed from. Only movement calibration reads
+            // it; the other modes ignore it.
+            float[][] window = prediction?.Window;
+
             TickCalibration? calibrated = null;
 
             if (trial.Role == BlockRole.Calibration)
@@ -656,11 +670,11 @@ public class ProtocolRunner : MonoBehaviour
                 // Offered in every mode, including raw and population-only. The calibration
                 // block is recorded identically whatever the mode so that recordings stay
                 // comparable; what differs is whether these ticks become centroids.
-                calibrator.ObserveCalibrationTick((int)trial.Emotion, i, scores);
+                calibrator.ObserveCalibrationTick((int)trial.Emotion, i, scores, window);
             }
             else if (PersonalCentroidBuilder.IsScoredTick(i))
             {
-                var decision = calibrator.Classify(i, scores);
+                var decision = calibrator.Classify(i, scores, window);
                 if (decision.Scored)
                 {
                     calibrated = decision;

@@ -166,8 +166,8 @@ public class ProtocolRunner : MonoBehaviour
 
     private CalibrationSessionConfig calibrationConfig;
 
-    // The library's movement calibration; null in a raw session.
-    private MovementCalibrator calibrator;
+    // Movement calibration is the predictor's own (NewFaceAuModel), so the predictor, its
+    // results file and this protocol all use the same calibration.
     private bool calibrationSealed;
 
     public IReadOnlyList<PlannedTrial> Plan { get; private set; }
@@ -469,7 +469,7 @@ public class ProtocolRunner : MonoBehaviour
     }
 
     /// <summary>
-    /// Build the library's movement calibrator when movement calibration is on, or refuse to run.
+    /// Start the predictor's movement calibration when it is on, or refuse to run.
     /// </summary>
     private bool PrepareCalibration()
     {
@@ -484,7 +484,11 @@ public class ProtocolRunner : MonoBehaviour
             return false;
         }
 
-        calibrator = calibrationConfig.MovementEnabled ? new MovementCalibrator(ClassOrder) : null;
+        if (calibrationConfig.MovementEnabled)
+        {
+            predictor.StartCalibration();
+        }
+
         return true;
     }
 
@@ -504,11 +508,12 @@ public class ProtocolRunner : MonoBehaviour
         calibrationSealed = true;
 
         // Raw sessions have nothing to build and nothing to invalidate.
-        bool valid = calibrator == null || calibrator.Finish();
-        string error = calibrator?.Error ?? string.Empty;
-        bool built = calibrator != null && calibrator.IsReady;
+        bool movement = calibrationConfig.MovementEnabled;
+        bool valid = !movement || predictor.FinishCalibration();
+        string error = movement ? predictor.CalibrationError ?? string.Empty : string.Empty;
+        bool built = movement && predictor.IsCalibrated;
 
-        var counts = calibrator?.KeptSampleCounts() ?? new int[ClassOrder.Length];
+        var counts = (movement ? predictor.CalibrationSampleCounts() : null) ?? new int[ClassOrder.Length];
         var perClass = new List<string>();
         for (int c = 0; c < counts.Length; ++c)
         {
@@ -599,34 +604,35 @@ public class ProtocolRunner : MonoBehaviour
         var rawVotes = new List<TickVote>();
         var calibratedVotes = new List<TickVote>();
 
-        // Each calibration trial is one emotion of the library's movement calibration. The
-        // block is recorded the same way in a raw session; only the calibrator is absent.
-        if (trial.Role == BlockRole.Calibration)
+        // Each calibration trial is one emotion of the predictor's movement calibration. The
+        // block is recorded the same way in a raw session; only the calibration is skipped.
+        bool calibrating = trial.Role == BlockRole.Calibration && calibrationConfig.MovementEnabled;
+        if (calibrating)
         {
-            calibrator?.BeginEmotion((int)trial.Emotion);
+            predictor.BeginCalibrationEmotion(trial.Emotion);
         }
 
         for (int i = 0; i < ticks; ++i)
         {
             float nextTick = Time.time + 1f;
 
-            var prediction = await predictor.PredictDetailed();
-            float[] scores = prediction?.Scores;
-
-            // The exact window the scores were computed from; movement calibration reads it.
-            float[][] window = prediction?.Window;
+            // Calibration-block ticks stay out of the predictor's results file, as calibration
+            // samples do everywhere; the detailed session log below still records every tick.
+            var prediction = await predictor.PredictDetailed(
+                saveResult: trial.Role != BlockRole.Calibration);
 
             NearestCentroid? calibrated = null;
 
-            if (trial.Role == BlockRole.Calibration)
+            if (calibrating)
             {
                 // By tick position, so tick 0 is dropped and a missed tick stays missed,
                 // exactly as the offline analysis fits the same recording.
-                calibrator?.ObserveAt(i, scores, window);
+                predictor.AddCalibrationSample(i, prediction);
             }
-            else if (PersonalCentroidBuilder.IsScoredTick(i))
+            else if (trial.Role == BlockRole.Evaluation && PersonalCentroidBuilder.IsScoredTick(i)
+                     && prediction.HasValue)
             {
-                calibrated = calibrator?.Classify(scores, window);
+                calibrated = predictor.CalibratedDecision(prediction.Value);
                 if (calibrated.HasValue)
                 {
                     calibratedVotes.Add(new TickVote(i, calibrated.Value.ClassIndex));

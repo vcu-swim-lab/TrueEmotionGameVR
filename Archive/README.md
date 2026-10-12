@@ -9,6 +9,7 @@ game or the library depends on it, and it is not maintained.
 | `Analysis/` | The analysis scripts (`*.py`), their tests, and the reports (`*.md`). `exploratory/` holds the experiments (volume and jitter augmentation, error analysis, movement calibration, smoothing, ...). |
 | `notebooks/` | The Colab training notebooks, **code only**: every output was cleared. |
 | `Docs/` | Reports written during the work: volume augmentation, jitter, test error analysis. |
+| `VREmotionDetection-Docs/` | Reports that used to live in the library: its validation report and the Anger logit-adjustment report. |
 
 ## What is not here, on purpose
 

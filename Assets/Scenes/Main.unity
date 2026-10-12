@@ -869,7 +869,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1e701289fcb9a714db0f5f067a0c54c1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  faceModel: {fileID: 5022602860645237092, guid: 9bc9031a9f212a649a8c15ee7ac6f32a, type: 3}
+  faceModel: {fileID: 5022602860645237092, guid: c8c2538830cca7d42b35813f72fa93bf, type: 3}
 --- !u!114 &964688081
 MonoBehaviour:
   m_ObjectHideFlags: 0

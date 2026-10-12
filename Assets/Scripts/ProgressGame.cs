@@ -37,6 +37,14 @@ public class ProgressGame : MonoBehaviour
     private readonly Emotion[] emotionList = emotionToEmoji.Keys.ToArray();
     public ProgressBar progressBar;
 
+    [Header("Calibration (optional)")]
+    [Tooltip("Before the first round, offer movement calibration: A calibrates (about 90 s), " +
+             "B skips, X uses the player's saved calibration if there is one.")]
+    [SerializeField] private bool offerCalibration = true;
+
+    [Tooltip("The id the calibration is saved under on this headset: letters, digits, '-', '_'.")]
+    [SerializeField] private string playerId = "player1";
+
     private SessionLogger sessionLogger;
 
     // Monotonic across rounds, so restarting the game does not reuse trial ids.
@@ -136,7 +144,11 @@ public class ProgressGame : MonoBehaviour
 
     private async void RunGame()
     {
-        // TODO: change to 
+        if (offerCalibration)
+        {
+            await OfferCalibration();
+        }
+
         while (true)
         {
             // Shuffle emotion list
@@ -239,11 +251,26 @@ public class ProgressGame : MonoBehaviour
             // holds one row per tick whether or not tracking was available.
             sessionLogger?.LogPrediction(trialId, emotion, i, prediction);
 
-            // Unchanged scoring rule: a point when the argmax class is the prompted one.
-            if (prediction != null && prediction.Value.Emotion == emotion)
+            if (prediction != null)
             {
-                // debug.text = $"[{emotion}] Prediction {i + 1}: {prediction.Value.Confidence:F2}";
-                score++;
+                // The calibrated emotion when the player calibrated, the model's own otherwise.
+                // The confidence is the model's probability for that emotion.
+                var value = prediction.Value;
+                var predicted = predictor.CalibratedEmotion(value) ?? value.Emotion;
+                float confidence = value.Scores[(int)predicted];
+
+                Debug.Log($"[game] round {trialId} {emotion} tick {i}: {predicted} " +
+                          $"{confidence:F2} (calibrated: {predictor.IsCalibrated})");
+
+                // A point when the prediction is the prompted emotion.
+                if (predicted == emotion)
+                {
+                    score++;
+                }
+            }
+            else
+            {
+                Debug.Log($"[game] round {trialId} {emotion} tick {i}: no face tracking");
             }
 
 
@@ -258,6 +285,85 @@ public class ProgressGame : MonoBehaviour
         print("Done with predicting " + emotion);
 
         return score;
+    }
+
+    // Ask once, before the first round. Calibration is optional: skipping it, or a failed
+    // calibration, leaves the game on the model's own predictions.
+    private async Awaitable OfferCalibration()
+    {
+        bool hasSaved = predictor.HasSavedCalibration(playerId);
+
+        text.text = "Calibrate the game to your face?\n\n" +
+                    "A: calibrate (about 90 seconds)\n" +
+                    "B: skip" +
+                    (hasSaved ? "\nX: use your saved calibration" : "");
+
+        while (true)
+        {
+            if (OVRInput.GetDown(OVRInput.Button.One))
+            {
+                await RunCalibration();
+                return;
+            }
+
+            if (OVRInput.GetDown(OVRInput.Button.Two))
+            {
+                predictor.ClearCalibration();
+                return;
+            }
+
+            if (hasSaved && OVRInput.GetDown(OVRInput.Button.Three))
+            {
+                text.text = predictor.LoadCalibration(playerId)
+                    ? "Saved calibration loaded."
+                    : $"Could not load it; playing without calibration.\n{predictor.CalibrationError}";
+                await Awaitable.WaitForSecondsAsync(2f);
+                return;
+            }
+
+            await Awaitable.NextFrameAsync();
+        }
+    }
+
+    private async Awaitable RunCalibration()
+    {
+        predictor.StartCalibration();
+
+        foreach (Emotion emotion in System.Enum.GetValues(typeof(Emotion)))
+        {
+            for (int j = 3; j >= 1; --j)
+            {
+                text.text = $"Next: {emotion}\n\n{j}";
+                await Awaitable.WaitForSecondsAsync(1f);
+            }
+
+            // The game font has no Neutral emoji, so Neutral is shown as text only.
+            string face = emotion == Emotion.Neutral ? "" : emotionToEmoji[emotion];
+            text.text = emotion == Emotion.Neutral
+                ? $"{face}\nRest your face and hold it"
+                : $"{face}\nMake a {emotion} face and hold it";
+
+            if (!await predictor.CalibrateEmotion(emotion))
+            {
+                Debug.LogWarning($"ProgressGame: face tracking was lost while calibrating {emotion}.");
+            }
+
+            text.text = "Relax your face.";
+            await Awaitable.WaitForSecondsAsync(2f);
+        }
+
+        if (predictor.FinishCalibration())
+        {
+            predictor.SaveCalibration(playerId);
+            text.text = "Calibration done.";
+        }
+        else
+        {
+            Debug.LogWarning($"ProgressGame: calibration failed: {predictor.CalibrationError}");
+            text.text = "Calibration did not work; playing without it.";
+        }
+
+        await Awaitable.WaitForSecondsAsync(2f);
     }
 
     // Full prediction: argmax class, all seven scores, and the exact five-frame AU window

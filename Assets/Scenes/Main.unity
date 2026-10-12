@@ -903,6 +903,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   enablePersonalCalibration: 0
   enableEmojiHeroPopulationCalibration: 0
+  enableMovementCalibration: 1
   enableCalibrationDebugLogging: 0
 --- !u!1 &1066909192
 GameObject:

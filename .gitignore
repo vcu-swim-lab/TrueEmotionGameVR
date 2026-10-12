@@ -119,3 +119,6 @@ __pycache__/
 # fixture, lives in Assets/Tests/EditMode/Fixtures/.
 /Analysis/
 /notebooks/
+
+# Results copied from the headset (VR Emotion > Get Results From Headset): real people, never commit.
+/HeadsetResults/

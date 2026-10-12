@@ -214,6 +214,7 @@ public class ProgressGame : MonoBehaviour
 
             text.text = "Thanks for playing! Scores:\n" +
                         string.Join("\n", score.Select(kv => $"{kv.Key}: {kv.Value}/10")) + "\n\n" +
+                        "What the headset saw this session:\n" + predictor.GetResultsSummary() + "\n\n" +
                         "Press any button to restart";
 
             Debug.Log("All emotion predictions collected.");

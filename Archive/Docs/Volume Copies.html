@@ -1,0 +1,368 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Volume Copies</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column. Part 1 = the volume step on a real window, live; Part 2 = all training data, its place in volume + jitter, results. */
+:root {
+  --bg: #f5f7f8;
+  --surface: #ffffff;
+  --fg: #17212b;
+  --muted: #5b6875;
+  --line: #d9e0e6;
+  --track: #e8edf0;
+  --vol: #c0661a;          /* volume */
+  --vol-soft: #f6e3d2;
+  --band: #0f7c78;         /* target size band 0.8 - 5.5 */
+  --band-soft: #d3ece9;
+  --vr: #2f6fb3;
+  --font-display: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11171c; --surface: #182128; --fg: #e4ebf0; --muted: #96a4b0; --line: #2b3741; --track: #22303a;
+    --vol: #f0a058; --vol-soft: #3d2a18; --band: #3fc1b8; --band-soft: #163b3a; --vr: #6fa8e6; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11171c; --surface: #182128; --fg: #e4ebf0; --muted: #96a4b0; --line: #2b3741; --track: #22303a;
+  --vol: #f0a058; --vol-soft: #3d2a18; --band: #3fc1b8; --band-soft: #163b3a; --vr: #6fa8e6; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-display); font-size: 16px; line-height: 1.55; }
+.wrap { max-width: 980px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 72px; display: flex; flex-direction: column; gap: 48px; }
+h1 { font-size: clamp(30px, 5vw, 42px); line-height: 1.1; margin: 0 0 12px; letter-spacing: -0.01em; }
+h2 { font-size: 23px; margin: 0 0 6px; text-wrap: balance; }
+h3 { margin: 0 0 6px; font-size: 16px; }
+p { margin: 0; max-width: 68ch; }
+.lede { color: var(--muted); font-size: 18px; }
+.note { color: var(--muted); font-size: 14px; }
+.eyebrow { font-family: var(--font-data); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--vol); margin-bottom: 4px; }
+.part-title { font-family: var(--font-data); font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); border-top: 1px solid var(--line); padding-top: 28px; }
+section { display: flex; flex-direction: column; gap: 16px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; min-width: 0; }
+.scroll { overflow-x: auto; }
+.how { border-left: 3px solid var(--vol); padding: 4px 0 4px 12px; font-size: 14.5px; max-width: 72ch; }
+.how b { color: var(--vol); }
+.mono { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+
+.steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 860px) { .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .steps { grid-template-columns: minmax(0, 1fr); } }
+.step { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 6px; }
+.step .n { font-family: var(--font-data); font-size: 12.5px; color: var(--vol); }
+.step b { font-size: 17px; }
+.step span { color: var(--muted); font-size: 14px; }
+
+.controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.pick { display: flex; gap: 8px; flex-wrap: wrap; }
+.pick button, .btn { font: inherit; font-size: 15px; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 7px 15px; cursor: pointer; }
+.pick button:hover, .btn:hover { border-color: var(--muted); }
+.pick button[aria-pressed="true"] { background: var(--fg); border-color: var(--fg); color: var(--surface); }
+.btn.primary { background: var(--vol); border-color: var(--vol); color: var(--surface); font-weight: 600; }
+:focus-visible { outline: 2px solid var(--vol); outline-offset: 2px; }
+
+.chart svg { width: 100%; min-width: 600px; height: auto; display: block; }
+.chart text { font-family: var(--font-display); fill: var(--fg); }
+.chart .m { fill: var(--muted); }
+.chart .d { font-family: var(--font-data); }
+
+.pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+@media (max-width: 720px) { .pair { grid-template-columns: minmax(0, 1fr); } }
+table.grid { border-collapse: separate; border-spacing: 2px; font-size: 11px; }
+table.grid th { font-weight: 500; color: var(--muted); }
+table.grid th.col { height: 96px; vertical-align: bottom; padding: 0 0 4px; }
+table.grid th.col div { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; font-size: 11.5px; color: var(--fg); margin: 0 auto; }
+table.grid th.row { text-align: right; padding-right: 6px; font-family: var(--font-data); font-size: 11px; color: var(--fg); }
+table.grid td { width: 42px; height: 28px; border-radius: 4px; text-align: center; font-family: var(--font-data); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.fact { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
+.fact .k { font-size: 13px; color: var(--muted); }
+.fact .v { font-family: var(--font-data); font-size: 18px; font-variant-numeric: tabular-nums; }
+
+table.t { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+table.t th { text-align: left; font-weight: 600; font-size: 13px; padding: 7px 8px; border-bottom: 1px solid var(--line); }
+table.t td { padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.t td.num { font-family: var(--font-data); text-align: right; font-variant-numeric: tabular-nums; }
+code, pre { font-family: var(--font-data); font-size: 13px; }
+code { background: var(--track); padding: 1px 5px; border-radius: 4px; }
+pre { background: var(--track); border-radius: 10px; padding: 14px; overflow-x: auto; margin: 0; line-height: 1.5; }
+ol.order { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 6px; }
+ol.order li b.v { color: var(--vol); }
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">Teacher model · training data augmentation</div>
+  <h1>Volume copies</h1>
+  <p class="lede">Volume makes a copy of a training window that is quieter or louder than the original, so the model learns that
+  a weak face can still show an emotion. It is the first step of volume + jitter, and the same rule as model C. All windows on this
+  page are real training windows.</p>
+</header>
+
+<div class="part-title">Part 1 · How one volume copy is made</div>
+
+<section>
+  <h2>Four steps</h2>
+  <div class="steps">
+    <div class="step"><span class="n">step 1</span><b>Measure the face</b>
+      <span>Face size = the sum of the 63 face action units, averaged over the 5 frames.</span></div>
+    <div class="step"><span class="n">step 2</span><b>Find the allowed range</b>
+      <span>From 0.8 ÷ size to 5.5 ÷ size, kept inside ×1/3 … ×3. Neutral always uses ×0.5 … ×1.5.</span></div>
+    <div class="step"><span class="n">step 3</span><b>Draw one number</b>
+      <span>Random in that range, so that halving and doubling are equally likely (log-uniform).</span></div>
+    <div class="step"><span class="n">step 4</span><b>Multiply the whole window</b>
+      <span>All 350 values get the same number. The face gets quieter or louder and keeps its shape.</span></div>
+  </div>
+</section>
+
+<section>
+  <div>
+    <div class="eyebrow">Try it</div>
+    <h2>Make a volume copy of a real window</h2>
+  </div>
+  <p class="how"><b>How to read:</b> the top chart shows the allowed range for this window and the number that was drawn.
+  The second chart shows where the face size lands. Press <b>Draw again</b> a few times: the grey ticks collect every number drawn
+  so far, and they spread evenly over the range.</p>
+  <div class="controls">
+    <div class="pick" id="pick" role="group" aria-label="Choose a window"></div>
+    <button class="btn primary" id="again" type="button">Draw again</button>
+  </div>
+  <div class="panel chart scroll"><svg id="rangeChart" viewBox="0 0 900 170" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Allowed volume range and the drawn number"></svg></div>
+  <div class="panel chart scroll"><svg id="sizeChart" viewBox="0 0 900 140" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Face size before and after volume"></svg></div>
+  <div class="pair">
+    <div class="panel"><h3>Original window</h3><p class="note" style="margin-bottom:8px">5 frames × the 8 action units that move most</p><div class="scroll"><table class="grid" id="g0"></table></div></div>
+    <div class="panel"><h3 id="copyTitle">Volume copy</h3><p class="note" style="margin-bottom:8px">every value × the same number, then kept in 0 … 1</p><div class="scroll"><table class="grid" id="g1"></table></div></div>
+  </div>
+  <div class="facts" id="facts"></div>
+</section>
+
+<div class="part-title">Part 2 · The bigger picture</div>
+
+<section>
+  <div>
+    <div class="eyebrow">All 6,656 expressive training windows</div>
+    <h2>What volume does to the face sizes of the training data</h2>
+  </div>
+  <p class="how"><b>How to read:</b> each bar counts training windows with that face size. Grey = the real windows, orange = one
+  volume copy of each. The green band is the target, 0.8 to 5.5. Neutral windows are not shown.</p>
+  <div class="panel chart scroll"><svg id="hist" viewBox="0 0 900 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Face size distribution before and after volume"></svg></div>
+  <div class="facts" id="histFacts"></div>
+  <p class="note">The training data is stronger than headset faces (headset sessions have median face sizes of 1.3 to 2.8). Volume
+  moves the copies into the band: very strong faces are made quieter, very weak ones louder. So two out of three copies are quieter.</p>
+</section>
+
+<section>
+  <div>
+    <div class="eyebrow">Inside volume + jitter</div>
+    <h2>Where the volume step sits</h2>
+  </div>
+  <div class="panel">
+    <ol class="order">
+      <li><b class="v">Volume number</b>, computed from the <b>original</b> window's face size (steps 1–3 above).</li>
+      <li><b class="v">Whole window × volume number.</b></li>
+      <li><b>Jitter:</b> every one of the 350 values × its own number from 0.8 to 1.2.</li>
+      <li><b>Clip:</b> every value kept in 0 … 1 (about 0.07% of values are cut).</li>
+      <li><b>Neutral check:</b> if the largest value of a Neutral copy is above 0.25, the copy is scaled down to 0.25.</li>
+    </ol>
+  </div>
+  <div class="panel scroll">
+    <table class="t">
+      <tr><th>Detail</th><th>What it means</th></tr>
+      <tr><td>Order of volume and jitter</td><td>Both are multiplications and the clip comes once at the end, so jitter first would give the same copy.</td></tr>
+      <tr><td>Volume only, or volume + jitter</td><td>The volume step is identical. Volume alone simply skips step 3.</td></tr>
+      <tr><td>Difference from model C</td><td>Model C applied the Neutral 0.25 limit to the volume number itself. Here it is applied to the finished copy, because jitter can push a Neutral value above 0.25 again. Without jitter the two give the same result.</td></tr>
+      <tr><td>New copies every epoch</td><td>Every epoch draws new numbers, so the model never sees the same copy twice. 8,181 real windows + 8,181 copies = 16,362 per epoch.</td></tr>
+    </table>
+  </div>
+  <pre><code>size = X[..., :63].sum(-1).mean(-1)                         # step 1
+low  = np.clip(0.8 / size, 1/3, 3)                          # step 2
+high = np.clip(5.5 / size, 1/3, 3)
+low[neutral], high[neutral] = 0.5, 1.5
+g = np.exp(rng.uniform(np.log(low), np.log(high)))          # step 3
+copy = X * g[:, None, None]                                 # step 4
+copy *= rng.uniform(0.8, 1.2, size=X.shape)                 # jitter (volume + jitter only)
+copy = np.clip(copy, 0, 1)                                  # clip
+# Neutral check: scale a Neutral copy down if its largest value is above 0.25</code></pre>
+</section>
+
+<section>
+  <div>
+    <div class="eyebrow">Result of volume</div>
+    <h2>What volume alone changed (5 seeds, offline)</h2>
+  </div>
+  <div class="panel scroll">
+    <table class="t">
+      <tr><th>Test set, VR</th><th style="text-align:right">No copies</th><th style="text-align:right">Volume</th><th style="text-align:right">Seeds better</th></tr>
+      <tr><td>New VR (quieter faces), macro-F1</td><td class="num">0.417</td><td class="num">0.457</td><td class="num">5 of 5</td></tr>
+      <tr><td>Emotional windows called Neutral (of 520)</td><td class="num">33.4</td><td class="num">21.6</td><td class="num">5 of 5</td></tr>
+      <tr><td>Accuracy on quiet faces</td><td class="num">0.18</td><td class="num">0.23</td><td class="num">4 of 5 (1 tie)</td></tr>
+      <tr><td>VR combined, macro-F1</td><td class="num">0.457</td><td class="num">0.476</td><td class="num">5 of 5 (small)</td></tr>
+    </table>
+  </div>
+  <p class="note">Mean of 5 seeds; with EmojiHero. On the headset without calibration: D (no copies) 0.584, C (volume) 0.598,
+  volume + jitter 0.616. With movement calibration all three are about 0.74.</p>
+</section>
+
+</div>
+
+<script>
+const D = {"au_names": ["BrowLowererL", "BrowLowererR", "CheekPuffL", "CheekPuffR", "CheekRaiserL", "CheekRaiserR", "CheekSuckL", "CheekSuckR", "ChinRaiserB", "ChinRaiserT", "DimplerL", "DimplerR", "EyesClosedL", "EyesClosedR", "EyesLookDownL", "EyesLookDownR", "EyesLookLeftL", "EyesLookLeftR", "EyesLookRightL", "EyesLookRightR", "EyesLookUpL", "EyesLookUpR", "InnerBrowRaiserL", "InnerBrowRaiserR", "JawDrop", "JawSidewaysLeft", "JawSidewaysRight", "JawThrust", "LidTightenerL", "LidTightenerR", "LipCornerDepressorL", "LipCornerDepressorR", "LipCornerPullerL", "LipCornerPullerR", "LipFunnelerLB", "LipFunnelerLT", "LipFunnelerRB", "LipFunnelerRT", "LipPressorL", "LipPressorR", "LipPuckerL", "LipPuckerR", "LipStretcherL", "LipStretcherR", "LipSuckLB", "LipSuckLT", "LipSuckRB", "LipSuckRT", "LipTightenerL", "LipTightenerR", "LipsToward", "LowerLipDepressorL", "LowerLipDepressorR", "MouthLeft", "MouthRight", "NoseWrinklerL", "NoseWrinklerR", "OuterBrowRaiserL", "OuterBrowRaiserR", "UpperLidRaiserL", "UpperLidRaiserR", "UpperLipRaiserL", "UpperLipRaiserR", "TongueTipInterdental", "TongueTipAlveolar", "TongueFrontDorsalPalate", "TongueMidDorsalPalate", "TongueBackDorsalVelar", "TongueOut", "TongueRetreat"], "examples": [{"label": "quiet Anger (our VR data)", "cls": 0, "window": [[0.06159999966621399, 0.025499999523162842, 0.0, 0.0, 0.01080000028014183, 0.00019999999494757503, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.03920000046491623, 0.04699999839067459, 0.0, 0.0, 0.0, 0.032099999487400055, 0.04320000112056732, 0.0, 0.0, 0.0, 0.0, 0.01810000091791153, 0.06289999932050705, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.01510000042617321, 0.020400000736117363, 0.2597000002861023, 0.5529000163078308, 0.0, 0.0, 0.00279999990016222, 0.034699998795986176, 0.0, 0.0, 0.0003000000142492354, 0.0, 0.0007999999797903001], [0.044199999421834946, 0.013299999758601189, 0.0, 0.0, 0.01080000028014183, 9.999999747378752e-05, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.04089999943971634, 0.04529999941587448, 0.0, 0.0, 0.0, 0.024399999529123306, 0.039900001138448715, 0.0, 0.0, 0.0, 0.0, 0.008899999782443047, 0.025599999353289604, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.015699999406933784, 0.02250000089406967, 0.23960000276565552, 0.5462999939918518, 0.0, 0.0, 0.002199999988079071, 0.027799999341368675, 0.0, 0.0, 0.00019999999494757503, 0.0, 0.0006000000284984708], [0.03229999914765358, 0.004800000227987766, 0.0, 0.0, 0.010900000110268593, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.03700000047683716, 0.04919999837875366, 0.0, 0.0, 0.0, 0.012299999594688416, 0.02290000021457672, 0.0, 0.0, 0.0, 0.0, 0.003800000064074993, 0.026799999177455902, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.006899999920278788, 0.013000000268220901, 0.22669999301433563, 0.5465999841690063, 0.0, 0.0, 0.0026000000070780516, 0.003800000064074993, 0.0, 0.0003000000142492354, 9.999999747378752e-05, 0.0, 0.00019999999494757503], [0.03310000151395798, 0.007000000216066837, 0.0, 0.0, 0.0071000000461936, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.035100001841783524, 0.051100000739097595, 0.0, 0.0, 0.0, 0.0071000000461936, 0.011300000362098217, 0.0, 0.0, 0.0, 0.0, 0.0012000000569969416, 0.007699999958276749, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.005499999970197678, 0.007499999832361937, 0.21739999949932098, 0.5570999979972839, 0.0, 0.0, 0.0017999999690800905, 0.002400000113993883, 0.0, 0.00019999999494757503, 9.999999747378752e-05, 0.0, 0.00019999999494757503], [0.039000000804662704, 0.012500000186264515, 0.0, 0.0, 0.010099999606609344, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.03880000114440918, 0.04740000143647194, 0.0, 0.0, 0.0, 0.00419999985024333, 0.019600000232458115, 0.0, 0.0, 0.0, 0.0, 0.0007999999797903001, 0.009399999864399433, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0034000000450760126, 0.004900000058114529, 0.23890000581741333, 0.5015000104904175, 0.0, 0.0, 0.00019999999494757503, 0.0003000000142492354, 0.0, 0.0, 0.0, 0.0, 0.0]]}, {"label": "strong Happiness (EmojiHero)", "cls": 3, "window": [[0.1152999997138977, 0.07479999959468842, 0.0, 9.999999747378752e-05, 0.7103999853134155, 0.6762999892234802, 0.0, 0.0, 0.0, 0.2442999929189682, 0.3434999883174896, 0.3384999930858612, 0.094200000166893, 0.00039999998989515007, 0.12540000677108765, 0.05290000140666962, 0.0, 0.0, 0.2110999971628189, 0.12520000338554382, 0.0, 0.0, 0.042500000447034836, 0.05849999934434891, 0.22830000519752502, 0.00559999980032444, 0.01080000028014183, 0.010900000110268593, 0.4203000068664551, 0.4706999957561493, 0.00800000037997961, 0.006399999838322401, 0.848800003528595, 0.8555999994277954, 0.0, 0.006300000008195639, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.09239999949932098, 0.09239999949932098, 0.22920000553131104, 0.302700012922287, 0.1784999966621399, 0.26829999685287476, 0.0, 0.0, 0.015399999916553497, 0.4049000144004822, 0.36719998717308044, 0.00930000003427267, 0.0, 0.019600000232458115, 0.0, 0.027300000190734863, 0.03629999980330467, 0.0, 0.05939999967813492, 0.515999972820282, 0.5152000188827515, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.050999999046325684, 0.02800000086426735, 0.0, 0.0, 0.44589999318122864, 0.3961000144481659, 0.0, 0.0, 0.008799999952316284, 0.131400004029274, 0.19020000100135803, 0.18979999423027039, 0.02160000056028366, 0.0, 0.021700000390410423, 0.00019999999494757503, 0.0, 0.0, 0.1932000070810318, 0.10679999738931656, 0.0, 0.0, 0.030700000002980232, 0.048700001090765, 0.06759999692440033, 0.003700000001117587, 0.010900000110268593, 0.00279999990016222, 0.27140000462532043, 0.3912999927997589, 0.0026000000070780516, 0.0010999999940395355, 0.6470000147819519, 0.6586999893188477, 0.0, 0.0012000000569969416, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.06030000001192093, 0.060100000351667404, 0.23100000619888306, 0.2401999980211258, 0.1761000007390976, 0.21979999542236328, 0.0, 0.0, 0.025499999523162842, 0.1453000009059906, 0.11760000139474869, 0.010599999688565731, 0.004800000227987766, 0.02370000071823597, 0.014700000174343586, 0.030300000682473183, 0.039500001817941666, 0.00039999998989515007, 0.14429999887943268, 0.4991999864578247, 0.5033000111579895, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.04089999943971634, 0.019099999219179153, 0.0, 0.0, 0.3772999942302704, 0.3325999975204468, 0.0, 0.0, 0.020800000056624413, 0.10670000314712524, 0.16609999537467957, 0.15780000388622284, 0.007699999958276749, 0.0, 0.007699999958276749, 0.0, 0.0, 0.0, 0.15119999647140503, 0.06459999829530716, 0.0, 0.0, 0.027000000700354576, 0.05420000106096268, 0.04749999940395355, 0.006000000052154064, 0.010900000110268593, 0.00039999998989515007, 0.2648000121116638, 0.4512999951839447, 0.0005000000237487257, 0.0003000000142492354, 0.52920001745224, 0.5351999998092651, 0.0, 0.0003000000142492354, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.041099999099969864, 0.04580000042915344, 0.22050000727176666, 0.2321999967098236, 0.16179999709129333, 0.2126999944448471, 0.0, 0.0, 0.028999999165534973, 0.09229999780654907, 0.07720000296831131, 0.01080000028014183, 0.007699999958276749, 0.07069999724626541, 0.07859999686479568, 0.04610000178217888, 0.07689999788999557, 0.013899999670684338, 0.2786000072956085, 0.49950000643730164, 0.5076000094413757, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.034299999475479126, 0.01080000028014183, 0.0, 0.0, 0.3885999917984009, 0.34119999408721924, 0.0, 0.0, 0.014000000432133675, 0.10970000177621841, 0.19200000166893005, 0.1907999962568283, 0.019999999552965164, 0.0, 0.019999999552965164, 0.0, 0.0, 0.0, 0.1664000004529953, 0.07930000126361847, 0.0, 0.0, 0.025599999353289604, 0.0575999990105629, 0.04989999905228615, 0.009600000455975533, 0.010900000110268593, 9.999999747378752e-05, 0.272599995136261, 0.4641999900341034, 9.999999747378752e-05, 9.999999747378752e-05, 0.558899998664856, 0.5677000284194946, 0.0, 9.999999747378752e-05, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.04749999940395355, 0.04960000142455101, 0.21870000660419464, 0.23960000276565552, 0.15770000219345093, 0.22269999980926514, 0.0, 0.0, 0.026399999856948853, 0.13220000267028809, 0.09539999812841415, 0.01080000028014183, 0.00989999994635582, 0.047600001096725464, 0.048500001430511475, 0.050200000405311584, 0.08009999990463257, 0.007600000128149986, 0.2587999999523163, 0.4927999973297119, 0.5090000033378601, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.03269999846816063, 0.012000000104308128, 0.0, 0.0, 0.3716000020503998, 0.33739998936653137, 0.0, 0.0, 0.036400001496076584, 0.09679999947547913, 0.11909999698400497, 0.11919999867677689, 0.015699999406933784, 0.0, 0.015699999406933784, 0.0, 0.0, 0.0, 0.1306000053882599, 0.04349999874830246, 0.0, 0.0, 0.027400000020861626, 0.05779999867081642, 0.02759999968111515, 0.003100000089034438, 0.010900000110268593, 0.0, 0.2662000060081482, 0.42890000343322754, 0.0, 0.0, 0.5098000168800354, 0.5182999968528748, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.004800000227987766, 0.004800000227987766, 0.0333000011742115, 0.0333000011742115, 0.2565000057220459, 0.2190999984741211, 0.19110000133514404, 0.20250000059604645, 0.0, 0.0, 0.0340999998152256, 0.025699999183416367, 0.015599999576807022, 0.0142000000923872, 0.010700000450015068, 0.06700000166893005, 0.06800000369548798, 0.05770000070333481, 0.08190000057220459, 0.004600000102072954, 0.24560000002384186, 0.4684999883174896, 0.4745999872684479, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]]}, {"label": "Neutral (our VR data)", "cls": 4, "window": [[0.00019999999494757503, 0.00019999999494757503, 0.0, 0.0, 0.028999999165534973, 0.029200000688433647, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.02419999986886978, 0.11050000041723251, 0.0, 0.0, 0.0, 0.0, 9.999999747378752e-05, 0.0, 0.028599999845027924, 0.004000000189989805, 0.01080000028014183, 0.0010000000474974513, 0.012900000438094139, 0.0, 0.010900000110268593, 0.00039999998989515007, 0.0, 0.0, 0.0, 0.003800000064074993, 0.0, 0.0003000000142492354, 0.0, 0.0, 0.03139999881386757, 0.018300000578165054, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.06920000165700912, 0.05810000002384186, 0.028300000354647636, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.02319999970495701, 0.0012000000569969416, 0.0, 0.0, 0.0, 9.999999747378752e-05, 0.0, 0.0, 0.0, 0.0, 9.999999747378752e-05], [9.999999747378752e-05, 9.999999747378752e-05, 0.0, 0.0, 0.031599998474121094, 0.02930000051856041, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.021700000390410423, 0.1080000028014183, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.031599998474121094, 0.005900000222027302, 0.010900000110268593, 0.0024999999441206455, 0.02199999988079071, 0.0, 0.010900000110268593, 0.0008999999845400453, 0.0, 0.0, 0.0, 0.006500000134110451, 0.0, 0.0010000000474974513, 0.0, 0.0, 0.02979999966919422, 0.029999999329447746, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.07199999690055847, 0.06129999831318855, 0.029100000858306885, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.04989999905228615, 0.010700000450015068, 0.0, 0.0, 0.0, 9.999999747378752e-05, 0.0, 0.0, 0.0, 0.0, 9.999999747378752e-05], [0.0, 0.0, 0.0, 0.0, 0.0284000001847744, 0.027499999850988388, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.011599999852478504, 0.09790000319480896, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.03400000184774399, 0.007499999832361937, 0.0071000000461936, 0.024399999529123306, 0.006500000134110451, 0.0, 0.010900000110268593, 0.00019999999494757503, 0.0, 0.0, 0.0, 0.008899999782443047, 0.0, 0.005900000222027302, 0.0, 0.0, 0.034299999475479126, 0.035100001841783524, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0843999981880188, 0.06889999657869339, 0.030400000512599945, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.024900000542402267, 0.0010999999940395355, 0.0, 0.0, 0.0, 9.999999747378752e-05, 0.0, 0.0, 0.0, 0.0, 9.999999747378752e-05], [0.0, 0.0, 0.0, 0.0, 0.03280000016093254, 0.032999999821186066, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0272000003606081, 0.11349999904632568, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.03359999880194664, 0.005900000222027302, 0.00570000009611249, 0.01850000023841858, 0.03830000013113022, 0.0, 0.010900000110268593, 0.001500000013038516, 0.0, 0.0, 0.0, 0.006300000008195639, 0.0, 0.0010000000474974513, 0.0, 0.0, 0.033399999141693115, 0.033399999141693115, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.08179999887943268, 0.06849999725818634, 0.029100000858306885, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.032999999821186066, 0.00019999999494757503, 0.0, 0.0, 0.0, 9.999999747378752e-05, 0.0, 0.0, 0.0, 0.0, 9.999999747378752e-05], [0.0, 0.0, 0.0, 0.0, 0.03099999949336052, 0.028200000524520874, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.024800000712275505, 0.11100000143051147, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.03350000083446503, 0.00839999970048666, 0.010099999606609344, 0.019300000742077827, 0.02419999986886978, 0.0, 0.010900000110268593, 0.0015999999595806003, 0.0, 0.0, 0.0, 0.010300000198185444, 0.0, 0.003800000064074993, 0.0, 0.0, 0.03739999979734421, 0.0357000008225441, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.08320000022649765, 0.06960000097751617, 0.031300000846385956, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.027400000020861626, 0.008700000122189522, 0.0, 0.0, 0.0, 9.999999747378752e-05, 0.0, 0.0, 0.0, 0.0, 9.999999747378752e-05]]}], "stats": {"volume": {"cos": 0.999, "r50": 0.74, "r5": 0.36, "r95": 2.3, "clipped_pct": 0.07}, "jitter": {"cos": 0.994, "r50": 1.0, "r5": 0.97, "r95": 1.03, "clipped_pct": 0.076}, "volume+jitter": {"cos": 0.993, "r50": 0.74, "r5": 0.36, "r95": 2.25, "clipped_pct": 0.07}}, "volume_hist": {"edges": [0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0], "orig_vr": [10, 66, 168, 226, 236, 256, 234, 163, 178, 121, 68, 55, 44, 24, 21, 50, 28, 20, 11, 75], "orig_eh": [85, 312, 424, 401, 409, 352, 346, 326, 297, 289, 234, 183, 187, 161, 126, 98, 98, 80, 68, 126], "after_vr": [0, 106, 290, 293, 300, 239, 200, 207, 178, 132, 109, 0, 0, 0, 0, 0, 0, 0, 0, 0], "after_eh": [3, 288, 657, 618, 563, 558, 499, 428, 383, 337, 268, 0, 0, 0, 0, 0, 0, 0, 0, 0], "median": {"orig_vr": 3.1, "orig_eh": 3.44, "after_vr": 2.57, "after_eh": 2.66}, "share_in_band_orig": 0.737, "share_in_band_after": 0.997, "louder_share": 0.342}};
+const AU = D.au_names;
+const NEUTRAL = 4;
+const PLAIN = [
+  ["LipCornerPuller", "Smile"], ["CheekRaiser", "Cheek raise"], ["LipCornerDepressor", "Lip corners down"],
+  ["BrowLowerer", "Brow down"], ["InnerBrowRaiser", "Inner brow up"], ["OuterBrowRaiser", "Outer brow up"],
+  ["LidTightener", "Eyelid tight"], ["UpperLidRaiser", "Eye wide"], ["EyesClosed", "Eye closed"],
+  ["NoseWrinkler", "Nose wrinkle"], ["UpperLipRaiser", "Upper lip up"], ["LowerLipDepressor", "Lower lip down"],
+  ["JawDrop", "Jaw open"], ["ChinRaiser", "Chin up"], ["LipPucker", "Lips pushed out"], ["LipStretcher", "Lips stretched"],
+  ["LipPressor", "Lips pressed"], ["LipTightener", "Lips tight"], ["LipSuck", "Lips sucked in"], ["LipFunneler", "Lips funnel"],
+  ["Dimpler", "Dimple"], ["CheekPuff", "Cheek puff"], ["EyesLook", "Gaze"], ["LipsToward", "Lips toward"],
+  ["Mouth", "Mouth side"], ["JawSideways", "Jaw side"], ["JawThrust", "Jaw forward"], ["CheekSuck", "Cheek suck"],
+];
+function plain(j) {
+  const name = AU[j], hit = PLAIN.find(([p]) => name.startsWith(p));
+  if (!hit) return name;
+  const rest = name.slice(hit[0].length);
+  const side = /^L|L$/.test(rest) ? " L" : /^R|R$/.test(rest) ? " R" : "";
+  return hit[1] + (hit[0] === "EyesLook" ? " " + rest : side);
+}
+const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
+const faceSize = w => w.reduce((s, fr) => s + fr.slice(0, 63).reduce((a, b) => a + b, 0), 0) / w.length;
+
+let current = 0, draws = [];
+const pick = document.getElementById("pick");
+pick.innerHTML = D.examples.map((ex, i) => `<button type="button" id="ex-${i}" data-i="${i}" aria-pressed="false">${ex.label}</button>`).join("");
+pick.addEventListener("click", e => { const b = e.target.closest("button"); if (b) { current = +b.dataset.i; draws = []; draw(); } });
+document.getElementById("again").addEventListener("click", draw);
+
+function draw() {
+  pick.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(+b.dataset.i === current)));
+  const ex = D.examples[current], w = ex.window, neutral = ex.cls === NEUTRAL;
+  const s = faceSize(w);
+  const rawLo = 0.8 / s, rawHi = 5.5 / s;
+  const lo = neutral ? 0.5 : clamp(rawLo, 1 / 3, 3), hi = neutral ? 1.5 : clamp(rawHi, 1 / 3, 3);
+  const g = Math.exp(Math.log(lo) + Math.random() * (Math.log(hi) - Math.log(lo)));
+  draws.push(g);
+
+  let copy = w.map(fr => fr.map(v => clamp(v * g, 0, 1)));
+  let clipped = w.flat().filter(v => v * g > 1).length, neutralScale = 1;
+  if (neutral) {
+    const peak = Math.max(...copy.flat());
+    if (peak > 0.25) { neutralScale = 0.25 / peak; copy = copy.map(fr => fr.map(v => v * neutralScale)); }
+  }
+  const s2 = faceSize(copy);
+
+  rangeChart(lo, hi, rawLo, rawHi, g, neutral);
+  sizeChart(s, s2);
+  grids(w, copy, g);
+  const facts = [
+    ["Face size of the original", s.toFixed(2)],
+    ["Allowed range", `×${lo.toFixed(2)} … ×${hi.toFixed(2)}`],
+    ["Drawn number", `×${g.toFixed(2)} (${g > 1 ? "louder" : "quieter"})`],
+    ["Face size of the copy", s2.toFixed(2)],
+    ["Values cut at 1", `${clipped} of 350`],
+  ];
+  if (neutral) facts.push(["Neutral check", neutralScale < 1 ? `scaled ×${neutralScale.toFixed(2)}` : "not needed"]);
+  document.getElementById("facts").innerHTML = facts.map(([k, v]) => `<div class="fact"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+}
+
+function rangeChart(lo, hi, rawLo, rawHi, g, neutral) {
+  // log axis from x0.25 to x4
+  const L = 70, R = 860, y = 90, a = Math.log(0.25), b = Math.log(4);
+  const x = v => L + (Math.log(v) - a) / (b - a) * (R - L);
+  let h = `<text x="${L}" y="22" font-size="12" class="m" letter-spacing="1">VOLUME NUMBER (LOG SCALE: ×0.5 AND ×2 ARE THE SAME DISTANCE FROM ×1)</text>`;
+  h += `<rect x="${x(1 / 3)}" y="${y - 22}" width="${x(3) - x(1 / 3)}" height="44" rx="6" fill="var(--track)"/>`;
+  h += `<text x="${x(1 / 3)}" y="${y + 40}" font-size="11.5" text-anchor="middle" class="m">limit ×1/3</text>`;
+  h += `<text x="${x(3)}" y="${y + 40}" font-size="11.5" text-anchor="middle" class="m">limit ×3</text>`;
+  h += `<rect x="${x(lo)}" y="${y - 22}" width="${Math.max(2, x(hi) - x(lo))}" height="44" rx="6" fill="var(--vol-soft)" stroke="var(--vol)"/>`;
+  [0.25, 0.5, 1, 2, 4].forEach(v => {
+    h += `<line x1="${x(v)}" y1="${y + 24}" x2="${x(v)}" y2="${y + 30}" stroke="var(--muted)"/>`;
+    h += `<text x="${x(v)}" y="${y + 58}" font-size="12" text-anchor="middle" class="m d">×${v}</text>`;
+  });
+  h += `<line x1="${x(1)}" y1="${y - 30}" x2="${x(1)}" y2="${y + 24}" stroke="var(--muted)" stroke-dasharray="3 3"/>`;
+  draws.slice(0, -1).forEach(d => { h += `<line x1="${x(d)}" y1="${y - 14}" x2="${x(d)}" y2="${y + 14}" stroke="var(--muted)" opacity="0.6"/>`; });
+  h += `<circle cx="${x(g)}" cy="${y}" r="9" fill="var(--vol)"/>`;
+  h += `<text x="${x(g)}" y="${y - 32}" font-size="14" font-weight="700" text-anchor="middle" fill="var(--vol)" class="d">×${g.toFixed(2)}</text>`;
+  const note = neutral ? "Neutral: fixed range ×0.5 … ×1.5"
+    : `range from 0.8 ÷ size = ×${rawLo.toFixed(2)}${rawLo < 1 / 3 ? " → raised to ×0.33" : ""} to 5.5 ÷ size = ×${rawHi.toFixed(2)}${rawHi > 3 ? " → cut to ×3" : ""}`;
+  h += `<text x="${R}" y="${y + 58}" font-size="12" text-anchor="end" fill="var(--vol)" dx="0" dy="22">${note}</text>`;
+  document.getElementById("rangeChart").innerHTML = h;
+}
+
+function sizeChart(s, s2) {
+  const L = 70, R = 860, y = 70, hi = 8;
+  const x = v => L + clamp(v, 0, hi) / hi * (R - L);
+  let h = `<text x="${L}" y="22" font-size="12" class="m" letter-spacing="1">FACE SIZE</text>`;
+  h += `<rect x="${x(0.8)}" y="${y - 16}" width="${x(5.5) - x(0.8)}" height="32" rx="6" fill="var(--band-soft)"/>`;
+  h += `<text x="${(x(0.8) + x(5.5)) / 2}" y="${y - 22}" font-size="12" text-anchor="middle" fill="var(--band)">target band 0.8 … 5.5</text>`;
+  h += `<line x1="${L}" y1="${y}" x2="${R}" y2="${y}" stroke="var(--line)" stroke-width="2"/>`;
+  for (let v = 0; v <= hi; v++) {
+    h += `<text x="${x(v)}" y="${y + 36}" font-size="12" text-anchor="middle" class="m d">${v}</text>`;
+  }
+  h += `<line x1="${x(s)}" y1="${y}" x2="${x(s2)}" y2="${y}" stroke="var(--vol)" stroke-width="3"/>`;
+  h += `<circle cx="${x(s)}" cy="${y}" r="8" fill="var(--fg)"/><text x="${x(s)}" y="${y + 56}" font-size="12.5" text-anchor="middle">original ${s.toFixed(2)}</text>`;
+  h += `<circle cx="${x(s2)}" cy="${y}" r="8" fill="var(--vol)"/><text x="${x(s2)}" y="${y - 0}" dy="-26" font-size="12.5" font-weight="700" text-anchor="middle" fill="var(--vol)">copy ${s2.toFixed(2)}</text>`;
+  document.getElementById("sizeChart").innerHTML = h;
+}
+
+function grids(w, copy, g) {
+  const means = w[0].map((_, j) => w.reduce((s, fr) => s + fr[j], 0) / w.length);
+  const cols = means.map((m, j) => [m, j]).filter(([, j]) => j < 63).sort((a, b) => b[0] - a[0]).slice(0, 8).map(x => x[1]);
+  const max = Math.max(0.05, ...[w, copy].flatMap(m => m.flatMap(fr => cols.map(j => fr[j]))));
+  const one = (id, m, token) => {
+    let h = "<tr><th></th>" + cols.map(j => `<th class="col"><div>${plain(j)}</div></th>`).join("") + "</tr>";
+    m.forEach((fr, f) => {
+      h += `<tr><th class="row">f${f + 1}</th>` + cols.map(j => {
+        const v = fr[j], t = clamp(v / max, 0, 1);
+        return `<td style="background:color-mix(in srgb, var(${token}) ${Math.round(t * 100)}%, var(--track));color:${t > 0.55 ? "var(--surface)" : "var(--fg)"}">${v < 0.005 ? "" : v.toFixed(2)}</td>`;
+      }).join("") + "</tr>";
+    });
+    document.getElementById(id).innerHTML = h;
+  };
+  one("g0", w, "--fg");
+  one("g1", copy, "--vol");
+  document.getElementById("copyTitle").textContent = `Volume copy (×${g.toFixed(2)})`;
+}
+draw();
+
+// histogram of all training windows
+(function () {
+  const H = D.volume_hist, E = H.edges, n = E.length - 1;
+  const before = H.orig_vr.map((v, i) => v + H.orig_eh[i]), after = H.after_vr.map((v, i) => v + H.after_eh[i]);
+  const L = 60, R = 870, T = 30, B = 240, max = Math.max(...before, ...after);
+  const bw = (R - L) / n, x = v => L + v / E[n] * (R - L), y = v => B - v / max * (B - T);
+  let h = `<rect x="${x(0.8)}" y="${T - 10}" width="${x(5.5) - x(0.8)}" height="${B - T + 10}" fill="var(--band-soft)"/>`;
+  h += `<text x="${(x(0.8) + x(5.5)) / 2}" y="${T - 14}" font-size="12" text-anchor="middle" fill="var(--band)">target band 0.8 … 5.5</text>`;
+  for (let k = 0; k <= 4; k++) {
+    const v = Math.round(max * k / 4);
+    h += `<line x1="${L}" y1="${y(v)}" x2="${R}" y2="${y(v)}" stroke="var(--line)"/>`;
+    h += `<text x="${L - 8}" y="${y(v) + 4}" font-size="11" text-anchor="end" class="m d">${v}</text>`;
+  }
+  for (let i = 0; i < n; i++) {
+    const x0 = L + i * bw;
+    h += `<rect x="${x0 + 2}" y="${y(before[i])}" width="${bw / 2 - 2}" height="${B - y(before[i])}" fill="var(--muted)" opacity="0.55"><title>${E[i]}–${E[i + 1]}: ${before[i]} real</title></rect>`;
+    h += `<rect x="${x0 + bw / 2}" y="${y(after[i])}" width="${bw / 2 - 2}" height="${B - y(after[i])}" fill="var(--vol)"><title>${E[i]}–${E[i + 1]}: ${after[i]} copies</title></rect>`;
+  }
+  for (let v = 0; v <= 10; v += 1) h += `<text x="${x(v)}" y="${B + 18}" font-size="11.5" text-anchor="middle" class="m d">${v === 10 ? "10+" : v}</text>`;
+  h += `<text x="${R}" y="${B + 40}" font-size="12" text-anchor="end" class="m">face size →</text>`;
+  h += `<rect x="${L}" y="${B + 30}" width="12" height="12" fill="var(--muted)" opacity="0.55"/><text x="${L + 18}" y="${B + 40}" font-size="12">real windows</text>`;
+  h += `<rect x="${L + 120}" y="${B + 30}" width="12" height="12" fill="var(--vol)"/><text x="${L + 138}" y="${B + 40}" font-size="12">volume copies</text>`;
+  document.getElementById("hist").innerHTML = h;
+
+  const M = H.median;
+  const facts = [
+    ["Inside the band, real → copies", `${Math.round(H.share_in_band_orig * 100)}% → ${(H.share_in_band_after * 100).toFixed(1)}%`],
+    ["Median size, our VR", `${M.orig_vr.toFixed(2)} → ${M.after_vr.toFixed(2)}`],
+    ["Median size, EmojiHero", `${M.orig_eh.toFixed(2)} → ${M.after_eh.toFixed(2)}`],
+    ["Copies that are louder", `${Math.round(H.louder_share * 100)}%`],
+  ];
+  document.getElementById("histFacts").innerHTML = facts.map(([k, v]) => `<div class="fact"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+})();
+</script>
+
+</body></html>

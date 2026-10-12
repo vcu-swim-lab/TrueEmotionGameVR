@@ -134,6 +134,12 @@ Notes:
 | Live verification | `Analysis/runtime_calibration_report.py --verify` (recomputes from the logged score and AU columns) |
 | Parity fixture | `Analysis/make_runtime_parity_fixture.py`, schema v2, case `movement_confused` |
 
+> **Update 2026-10-12.** The personal, population and hybrid modes, `RuntimeCalibrator` and
+> `RuntimeCalibrationSettings` were removed. Calibration is now movement calibration only, from
+> the VREmotionDetection library (`MovementCalibrator`), and it is switched on by the **Use
+> Calibration** checkbox on the **New Face Au Model** component (off by default). The debug
+> logging checkbox is on `ProtocolRunner`. This section records the setup as it was.
+
 **How to use.** On `RuntimeCalibrationSettings` (the `Canvas` object in `Main.unity`), tick only
 **Enable Movement Calibration**. Ticking it clears the other two checkboxes, and ticking either of
 them clears it. `CalibrationSessionConfig.Lock` refuses the combination at session start in case

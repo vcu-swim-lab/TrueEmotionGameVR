@@ -38,11 +38,10 @@ public class ProgressGame : MonoBehaviour
     public ProgressBar progressBar;
 
     [Header("Calibration (optional)")]
-    [Tooltip("Before the first round, offer movement calibration: A calibrates (about 90 s), " +
-             "B skips, X uses the player's saved calibration if there is one.")]
-    [SerializeField] private bool offerCalibration = true;
-
-    [Tooltip("The id the calibration is saved under on this headset: letters, digits, '-', '_'.")]
+    [Tooltip("When \"Use Calibration\" is ticked on the New Face Au Model component, the game " +
+             "offers calibration before the first round: A calibrates (about 90 s), B skips, X " +
+             "uses this player's saved calibration. This is the id it is saved under on the " +
+             "headset: letters, digits, '-', '_'.")]
     [SerializeField] private string playerId = "player1";
 
     private SessionLogger sessionLogger;
@@ -144,7 +143,8 @@ public class ProgressGame : MonoBehaviour
 
     private async void RunGame()
     {
-        if (offerCalibration)
+        // The library's "Use Calibration" checkbox; unticked, the game never asks.
+        if (predictor.UseCalibration)
         {
             await OfferCalibration();
         }

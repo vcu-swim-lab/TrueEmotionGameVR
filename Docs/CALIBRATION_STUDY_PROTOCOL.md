@@ -712,6 +712,12 @@ about the model.
 **The teacher is still never retrained.** Only the interpretation of its seven outputs changes,
 exactly as offline.
 
+> **Update 2026-10-12.** The personal, population and hybrid modes, `RuntimeCalibrator` and
+> `RuntimeCalibrationSettings` were removed. Calibration is now movement calibration only, from
+> the VREmotionDetection library (`MovementCalibrator`), and it is switched on by the **Use
+> Calibration** checkbox on the **New Face Au Model** component (off by default). The debug
+> logging checkbox is on `ProtocolRunner`. This section records the setup as it was.
+
 ### 10.1 Four modes, from two operator toggles
 
 `RuntimeCalibrationSettings`, on the same GameObject as `ProtocolRunner`:

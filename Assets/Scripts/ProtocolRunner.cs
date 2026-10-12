@@ -32,7 +32,6 @@ using Random = System.Random;
 [RequireComponent(typeof(NewFaceAuModel))]
 [RequireComponent(typeof(DeviceManager))]
 [RequireComponent(typeof(OVRFaceExpressions))]
-[RequireComponent(typeof(RuntimeCalibrationSettings))]
 public class ProtocolRunner : MonoBehaviour
 {
     // Bump when anything that changes the meaning of a recording changes: the class set,
@@ -66,6 +65,13 @@ public class ProtocolRunner : MonoBehaviour
     [Tooltip("Shortens every trial so the flow can be walked through at a desk. " +
              "Recordings made with this on are marked as rehearsals and must not be analysed.")]
     [SerializeField] private bool fastRehearsal = false;
+
+    [Header("Calibration")]
+    [Tooltip("Whether the session calibrates is the \"Use Calibration\" checkbox on the New Face " +
+             "Au Model component (VREmotionDetection library). This one only writes each " +
+             "evaluation tick's calibrated decision to the Unity console, readable over " +
+             "`adb logcat`. Development builds only. Nothing is ever shown to the participant.")]
+    [SerializeField] private bool calibrationDebugLogging = false;
 
     // All seven model output classes are prompted, Neutral included. Leaving Neutral out
     // would let the adapter range over six classes while the raw model ranges over seven,
@@ -158,7 +164,6 @@ public class ProtocolRunner : MonoBehaviour
     private SessionLogger sessionLogger;
     private int seedUsed;
 
-    private RuntimeCalibrationSettings calibrationSettings;
     private CalibrationSessionConfig calibrationConfig;
 
     // The library's movement calibration; null in a raw session.
@@ -195,32 +200,6 @@ public class ProtocolRunner : MonoBehaviour
         }
 
         predictor = GetComponent<NewFaceAuModel>();
-
-        // Explicit rather than trusted to `[RequireComponent]`. That attribute adds the
-        // component when this one is *added* in the editor; it does nothing for a GameObject
-        // already serialised in a scene, so a scene saved before the attribute existed opens
-        // with the component missing and no warning. Left to `GetComponent` alone, the first
-        // symptom would be a NullReferenceException partway through `RunSession`, after the
-        // participant had already been greeted.
-        //
-        // `== null` rather than `is null` or `??`: UnityEngine.Object overloads `==`, and the
-        // null-propagating operators bypass that overload, so a destroyed or unassigned
-        // reference would not be recognised as missing.
-        calibrationSettings = GetComponent<RuntimeCalibrationSettings>();
-        if (calibrationSettings == null)
-        {
-            Debug.LogError(
-                $"{nameof(ProtocolRunner)}: this GameObject ('{name}') has no " +
-                $"{nameof(RuntimeCalibrationSettings)} component, so there is no calibration " +
-                "configuration to read and the session cannot start.\n" +
-                $"Add {nameof(RuntimeCalibrationSettings)} to '{name}' in the scene and save " +
-                "it. Both of its checkboxes default to off, which reproduces the raw-mode " +
-                "behaviour this protocol had before runtime calibration existed.\n" +
-                "`Assets/Tests/EditMode/SceneWiringTests.cs` checks this at the scene level " +
-                "so it fails in CI rather than in front of a participant.");
-            enabled = false;
-            return;
-        }
 
         if (!CheckClassOrder())
         {
@@ -426,7 +405,16 @@ public class ProtocolRunner : MonoBehaviour
 
         // Read once, here, and never again. Everything downstream holds this object rather
         // than the component, so a checkbox toggled mid-session cannot reach the session.
-        calibrationConfig = calibrationSettings.LockForSession();
+        // The library's "Use Calibration" checkbox decides whether this session calibrates.
+        bool debug = calibrationDebugLogging && Debug.isDebugBuild;
+        if (calibrationDebugLogging && !debug)
+        {
+            Debug.LogWarning($"{nameof(ProtocolRunner)}: calibration debug logging is only " +
+                             "available in a development build. It is off for this session " +
+                             "and recorded as off.");
+        }
+
+        calibrationConfig = CalibrationSessionConfig.Lock(predictor.UseCalibration, debug);
 
         Debug.Log($"{nameof(ProtocolRunner)}: calibration {calibrationConfig}");
 

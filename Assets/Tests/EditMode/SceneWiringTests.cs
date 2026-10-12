@@ -35,8 +35,13 @@ namespace VcuSwimLab.Calibration.Tests
     {
         private const string ScenePath = "Assets/Scenes/Main.unity";
         private const string ProtocolRunnerScript = "Assets/Scripts/ProtocolRunner.cs";
-        private const string CalibrationSettingsScript =
-            "Assets/Scripts/RuntimeCalibrationSettings.cs";
+
+        // NewFaceAuModel lives in the VREmotionDetection package, whose path differs between a
+        // local checkout and a git install, so its script is identified by its fixed GUID.
+        private const string NewFaceAuModelGuid = "1e701289fcb9a714db0f5f067a0c54c1";
+
+        // The removed game-side component; nothing in the scene may still point at it.
+        private const string RemovedCalibrationSettingsGuid = "9b1f664d04035ce4dabcfa384cc6eff6";
 
         /// <summary>One `--- !u!114 &id MonoBehaviour` block of a scene file.</summary>
         private sealed class SceneComponent
@@ -159,103 +164,25 @@ namespace VcuSwimLab.Calibration.Tests
         }
 
         [Test]
-        public void Every_protocol_runner_shares_its_GameObject_with_calibration_settings()
+        public void The_scene_s_predictor_has_calibration_off()
         {
-            string runnerGuid = ScriptGuid(ProtocolRunnerScript);
-            string settingsGuid = ScriptGuid(CalibrationSettingsScript);
+            var predictors = With(NewFaceAuModelGuid);
+            Assert.AreEqual(1, predictors.Count, $"expected exactly one NewFaceAuModel in {ScenePath}");
 
-            var components = MonoBehaviours();
-            var hostsWithSettings = components
-                .Where(c => c.ScriptGuid == settingsGuid)
-                .Select(c => c.GameObjectId)
-                .ToHashSet(StringComparer.Ordinal);
-
-            var runners = components.Where(c => c.ScriptGuid == runnerGuid).ToList();
-            Assert.IsNotEmpty(runners, "no ProtocolRunner in the scene at all");
-
-            foreach (var runner in runners)
-            {
-                Assert.IsTrue(
-                    hostsWithSettings.Contains(runner.GameObjectId),
-                    $"the GameObject (fileID {runner.GameObjectId}) carrying ProtocolRunner in "
-                    + $"{ScenePath} has no RuntimeCalibrationSettings. RequireComponent does not "
-                    + "add one to a GameObject that was already serialised; run "
-                    + "Tools > Calibration > Wire calibration settings into the open scene, or "
-                    + "add it by hand and save the scene.");
-            }
+            // Calibration is off by default: a build made from the committed scene runs the
+            // model's own predictions until someone ticks "Use Calibration".
+            Assert.IsTrue(predictors[0].Fields.ContainsKey("useCalibration"),
+                          "the scene does not store the Use Calibration checkbox");
+            Assert.AreEqual("0", predictors[0].Fields["useCalibration"],
+                            "Use Calibration is ticked in the committed scene");
         }
 
         [Test]
-        public void The_calibration_settings_serialise_both_checkboxes()
+        public void No_component_points_at_the_removed_calibration_settings()
         {
-            var settings = With(ScriptGuid(CalibrationSettingsScript));
-            Assert.IsNotEmpty(settings, "no RuntimeCalibrationSettings in the scene");
-
-            foreach (var component in settings)
-            {
-                // Named exactly as the fields are declared. A rename that did not reach the
-                // scene would leave the old key here holding the operator's choice while the
-                // new field silently took its default.
-                CollectionAssert.Contains(component.Fields.Keys, "enableMovementCalibration");
-                CollectionAssert.Contains(component.Fields.Keys, "enableCalibrationDebugLogging");
-
-                // The removed modes must not linger: a stale key reads as a live setting.
-                CollectionAssert.DoesNotContain(component.Fields.Keys, "enablePersonalCalibration");
-                CollectionAssert.DoesNotContain(component.Fields.Keys,
-                                                "enableEmojiHeroPopulationCalibration");
-            }
-        }
-
-        [Test]
-        public void The_committed_scene_runs_movement_calibration_without_debug_logging()
-        {
-            var settings = With(ScriptGuid(CalibrationSettingsScript));
-            Assert.IsNotEmpty(settings);
-
-            foreach (var component in settings)
-            {
-                // A build made from the committed scene runs movement calibration with no
-                // change in the editor; switching it off is a deliberate edit.
-                Assert.AreEqual("1", component.Fields["enableMovementCalibration"],
-                                "enableMovementCalibration is not checked in the scene");
-                Assert.IsFalse(component.Fields["enableCalibrationDebugLogging"] == "1",
-                               "enableCalibrationDebugLogging is checked in the scene");
-            }
-        }
-
-        [Test]
-        public void The_settings_component_is_listed_on_its_host_GameObject()
-        {
-            // The `m_GameObject` back-reference alone is not the whole link: Unity drives the
-            // inspector from the host's `m_Component` list, and a component missing from it
-            // would not appear even though it points at the object.
-            string settingsGuid = ScriptGuid(CalibrationSettingsScript);
-            var settings = With(settingsGuid);
-            Assert.IsNotEmpty(settings);
-
-            string path = Path.Combine(Root, ScenePath.Replace('/', Path.DirectorySeparatorChar));
-            string scene = File.ReadAllText(path);
-
-            foreach (var component in settings)
-            {
-                int at = scene.IndexOf($"--- !u!1 &{component.GameObjectId}\n",
-                                       StringComparison.Ordinal);
-                if (at < 0)
-                {
-                    at = scene.IndexOf($"--- !u!1 &{component.GameObjectId}\r\n",
-                                       StringComparison.Ordinal);
-                }
-
-                Assert.GreaterOrEqual(at, 0,
-                                      $"no GameObject block for fileID {component.GameObjectId}");
-
-                int end = scene.IndexOf("\n--- ", at + 1, StringComparison.Ordinal);
-                string block = end < 0 ? scene.Substring(at) : scene.Substring(at, end - at);
-
-                StringAssert.Contains($"component: {{fileID: {component.FileId}}}", block,
-                                      "the settings component is not in its host's m_Component "
-                                      + "list, so it would not show in the inspector");
-            }
+            Assert.IsEmpty(With(RemovedCalibrationSettingsGuid),
+                           "the scene still holds RuntimeCalibrationSettings, which no longer "
+                           + "exists; Unity would show it as a missing script");
         }
     }
 }

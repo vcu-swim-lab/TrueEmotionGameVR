@@ -901,8 +901,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9b1f664d04035ce4dabcfa384cc6eff6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  enablePersonalCalibration: 0
-  enableEmojiHeroPopulationCalibration: 0
   enableMovementCalibration: 1
   enableCalibrationDebugLogging: 0
 --- !u!1 &1066909192

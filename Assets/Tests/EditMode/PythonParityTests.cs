@@ -95,26 +95,19 @@ namespace VcuSwimLab.Calibration.Tests
 
         // ------------------------------------------------------------------ preconditions
 
+        private static readonly string[] ClassOrder =
+        {
+            "Anger", "Disgust", "Fear", "Happiness", "Neutral", "Sadness", "Surprise",
+        };
+
         [Test]
         public void The_fixture_was_generated_against_this_build_s_constants()
         {
             Assert.AreEqual("runtime-calibration-parity-v2", Text(Fixture, "schema_version"));
             Assert.AreEqual(CalibrationMath.Epsilon, Number(Fixture, "epsilon"));
-            Assert.AreEqual(CalibrationMath.FrozenHybridAlpha, Number(Fixture, "frozen_alpha"));
             Assert.AreEqual(PersonalCentroidBuilder.RequiredTicksPerCentroid,
                             Integer(Fixture, "ticks_required_per_centroid"));
-            CollectionAssert.AreEqual(PopulationProfile.ExpectedClassOrder,
-                                      Strings(Array(Fixture, "class_order")));
-        }
-
-        [Test]
-        public void The_fixture_pins_the_same_population_artifact_the_build_ships()
-        {
-            var profile = PopulationProfile.Parse(TestPaths.ReadPopulationArtifact());
-
-            Assert.AreEqual(profile.SemanticSha256, Text(Fixture, "population_semantic_sha256"));
-            Assert.AreEqual(profile.ConversionSha256, Text(Fixture, "population_conversion_sha256"),
-                            "the fixture was generated against a different artifact; regenerate it");
+            CollectionAssert.AreEqual(ClassOrder, Strings(Array(Fixture, "class_order")));
         }
 
         [Test]
@@ -230,7 +223,7 @@ namespace VcuSwimLab.Calibration.Tests
                     votes.Add(new TickVote(Integer(tick, "tick"), Integer(tick, "class_index")));
                 }
 
-                var vote = TrialMajority.Vote(votes, PopulationProfile.ExpectedClassOrder.Length);
+                var vote = TrialMajority.Vote(votes, ClassOrder.Length);
 
                 Assert.AreEqual(Integer(test, "expected_class_index"), vote.ClassIndex, name);
                 Assert.AreEqual(Flag(test, "expected_tie"), vote.TieOccurred, name);
@@ -239,26 +232,27 @@ namespace VcuSwimLab.Calibration.Tests
 
         // ------------------------------------------------------------------ full sessions
 
+        /// <summary>
+        /// Every movement-mode case, run through the library's `MovementCalibrator` exactly as
+        /// `ProtocolRunner` drives it: one `BeginEmotion` per calibration trial, every tick by
+        /// position. The fixture's personal, population and hybrid cases are skipped; those
+        /// modes were removed from the game.
+        /// </summary>
         [Test]
-        public void Every_recorded_session_case_matches_python()
+        public void Every_recorded_movement_case_matches_python()
         {
             var cases = Array(Fixture, "cases");
-            Assert.Greater(cases.Count, 0, "the fixture holds no cases");
-
             var classNames = Strings(Array(Fixture, "class_order"));
-            string artifact = TestPaths.ReadPopulationArtifact();
+            int movementCases = 0;
 
             foreach (object entry in cases)
             {
                 var test = MiniJson.AsObject(entry, "case");
                 string name = Text(test, "name");
-                var mode = ModeOf(Text(test, "mode"));
+                if (Text(test, "mode") != CalibrationSessionConfig.MovementName) continue;
+                movementCases++;
 
-                var population = CalibrationModes.UsesPopulation(mode)
-                    ? PopulationProfile.Parse(artifact)
-                    : null;
-
-                var calibrator = RuntimeCalibrator.Create(mode, classNames, population);
+                var calibrator = new MovementCalibrator(classNames);
 
                 var recording = MiniJson.AsObject(
                     MiniJson.Field(test, "recording", name), $"{name}.recording");
@@ -267,92 +261,40 @@ namespace VcuSwimLab.Calibration.Tests
                              MiniJson.Field(recording, "calibration", name), "calibration"))
                 {
                     var trial = MiniJson.AsObject(t, "calibration trial");
-                    int prompted = Integer(trial, "prompted");
+                    calibrator.BeginEmotion(Integer(trial, "prompted"));
 
                     foreach (object k in Array(trial, "ticks"))
                     {
                         var tick = MiniJson.AsObject(k, "tick");
-                        calibrator.ObserveCalibrationTick(
-                            prompted, Integer(tick, "tick"), Floats(Array(tick, "scores")),
-                            Window(tick));
+                        calibrator.ObserveAt(Integer(tick, "tick"), Floats(Array(tick, "scores")),
+                                             Window(tick));
                     }
                 }
 
-                calibrator.Seal();
-                Assert.IsTrue(calibrator.CalibrationValid,
-                              $"{name}: {calibrator.CalibrationError}");
+                Assert.IsTrue(calibrator.Finish(), $"{name}: {calibrator.Error}");
 
                 var expected64 = MiniJson.AsObject(
                     MiniJson.Field(test, "expected_f64", name), $"{name}.expected_f64");
                 var expected32 = MiniJson.AsObject(
                     MiniJson.Field(test, "expected_f32", name), $"{name}.expected_f32");
 
-                AssertCentroids(name, expected64, calibrator);
-                AssertTicks(name, recording, expected64, expected32, calibrator,
-                            classNames.Length);
+                AssertTicks(name, recording, expected64, expected32, calibrator, classNames.Length);
             }
-        }
 
-        private static CalibrationMode ModeOf(string name)
-        {
-            switch (name)
-            {
-                case CalibrationModes.RawName: return CalibrationMode.Raw;
-                case CalibrationModes.PersonalName: return CalibrationMode.Personal;
-                case CalibrationModes.PopulationName: return CalibrationMode.Population;
-                case CalibrationModes.HybridName: return CalibrationMode.Hybrid;
-                case CalibrationModes.MovementName: return CalibrationMode.Movement;
-                default: throw new AssertionException($"the fixture names an unknown mode '{name}'");
-            }
-        }
-
-        private static void AssertCentroids(string name, Dictionary<string, object> expected,
-                                            RuntimeCalibrator calibrator)
-        {
-            AssertMatrix(name, "centroid", Array(expected, "centroids"),
-                         calibrator.ActiveCentroidsForTesting());
-
-            object movement = MiniJson.Field(expected, "movement_centroids", name);
-            if (movement == null)
-            {
-                Assert.IsNull(calibrator.MovementCentroidsForTesting(),
-                              $"{name}: movement centroids exist outside movement mode");
-            }
-            else
-            {
-                AssertMatrix(name, "movement centroid", MiniJson.AsArray(movement, "movement_centroids"),
-                             calibrator.MovementCentroidsForTesting());
-            }
-        }
-
-        private static void AssertMatrix(string name, string what, List<object> rows, double[][] actual)
-        {
-            Assert.IsNotNull(actual, $"{name}: no {what}s");
-            Assert.AreEqual(rows.Count, actual.Length, $"{name}: {what} count");
-
-            for (int e = 0; e < rows.Count; ++e)
-            {
-                var row = Doubles(MiniJson.AsArray(rows[e], $"centroids[{e}]"));
-                Assert.AreEqual(row.Length, actual[e].Length, $"{name}: {what}[{e}] width");
-                for (int i = 0; i < row.Length; ++i)
-                {
-                    Assert.AreEqual(row[i], actual[e][i], Tolerance,
-                                    $"{name}: {what}[{e}][{i}]");
-                }
-            }
+            Assert.Greater(movementCases, 0, "the fixture holds no movement case");
         }
 
         private static void AssertTicks(string name, Dictionary<string, object> recording,
                                         Dictionary<string, object> expected64,
                                         Dictionary<string, object> expected32,
-                                        RuntimeCalibrator calibrator, int classCount)
+                                        MovementCalibrator calibrator, int classCount)
         {
             var expectedTicks = Array(expected64, "ticks");
             var decisions32 = Array(expected32, "ticks");
             var expectedTrials = Array(expected64, "trials");
 
             var byTrial = new Dictionary<int, List<TickVote>>();
-            var actual = new List<(int Trial, int Tick, TickCalibration Result)>();
+            var actual = new List<(int Trial, int Tick, NearestCentroid Result)>();
 
             foreach (object t in MiniJson.AsArray(
                          MiniJson.Field(recording, "evaluation", name), "evaluation"))
@@ -369,10 +311,10 @@ namespace VcuSwimLab.Calibration.Tests
                     // drops it from the evaluation split, so the runtime must too.
                     if (!PersonalCentroidBuilder.IsScoredTick(index)) continue;
 
-                    var result = calibrator.Classify(index, Floats(Array(tick, "scores")), Window(tick));
-                    Assert.IsTrue(result.Scored, $"{name}: trial {trialId} tick {index}");
+                    var result = calibrator.Classify(Floats(Array(tick, "scores")), Window(tick));
+                    Assert.IsTrue(result.HasValue, $"{name}: trial {trialId} tick {index}");
 
-                    actual.Add((trialId, index, result));
+                    actual.Add((trialId, index, result.Value));
 
                     if (!byTrial.TryGetValue(trialId, out var votes))
                     {
@@ -380,7 +322,7 @@ namespace VcuSwimLab.Calibration.Tests
                         byTrial[trialId] = votes;
                     }
 
-                    votes.Add(new TickVote(index, result.ClassIndex));
+                    votes.Add(new TickVote(index, result.Value.ClassIndex));
                 }
             }
 

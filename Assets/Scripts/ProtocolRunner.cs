@@ -160,13 +160,15 @@ public class ProtocolRunner : MonoBehaviour
 
     private RuntimeCalibrationSettings calibrationSettings;
     private CalibrationSessionConfig calibrationConfig;
-    private PopulationProfile populationProfile;
-    private RuntimeCalibrator calibrator;
+
+    // The library's movement calibration; null in a raw session.
+    private MovementCalibrator calibrator;
+    private bool calibrationSealed;
 
     public IReadOnlyList<PlannedTrial> Plan { get; private set; }
 
     // The class order every part of this study agrees on: the `Emotion` enum, the CSV's
-    // `score_<Class>` columns, the population artifact, and the seven rows of every centroid
+    // `score_<Class>` columns, and the seven rows of every centroid
     // matrix. `CheckClassOrder` below refuses to run if they ever stop agreeing, because a
     // permutation would relabel every centroid without changing a single number.
     private static readonly string[] ClassOrder =
@@ -289,9 +291,9 @@ public class ProtocolRunner : MonoBehaviour
     }
 
     // Every centroid is a row in a matrix and every score is a column, and both are indexed by
-    // this order. If the `Emotion` enum were ever reordered, the population artifact's rows
-    // would keep their names while silently meaning different classes, and the resulting
-    // numbers would look entirely ordinary. Cheap to check once; impossible to notice later.
+    // this order. If the `Emotion` enum were ever reordered, the logged columns would keep their
+    // names while silently meaning different classes, and the resulting numbers would look
+    // entirely ordinary. Cheap to check once; impossible to notice later.
     private static bool CheckClassOrder()
     {
         var declared = (Emotion[])Enum.GetValues(typeof(Emotion));
@@ -310,14 +312,6 @@ public class ProtocolRunner : MonoBehaviour
                 Debug.LogError($"{nameof(ProtocolRunner)}: Emotion.{declared[i]} is at index " +
                                $"{(int)declared[i]} but the study's class order puts " +
                                $"'{ClassOrder[i]}' there. Every centroid would be mislabelled.");
-                return false;
-            }
-
-            if (PopulationProfile.ExpectedClassOrder[i] != ClassOrder[i])
-            {
-                Debug.LogError($"{nameof(ProtocolRunner)}: the population artifact expects " +
-                               $"'{PopulationProfile.ExpectedClassOrder[i]}' at index {i}, " +
-                               $"this protocol has '{ClassOrder[i]}'.");
                 return false;
             }
         }
@@ -374,8 +368,7 @@ public class ProtocolRunner : MonoBehaviour
                 NewFaceAuModel.FeaturesPerFrame,
                 modelInfo,
                 sessionInfo,
-                calibrationConfig,
-                populationProfile);
+                calibrationConfig);
         }
         catch (Exception e)
         {
@@ -433,19 +426,11 @@ public class ProtocolRunner : MonoBehaviour
 
         // Read once, here, and never again. Everything downstream holds this object rather
         // than the component, so a checkbox toggled mid-session cannot reach the session.
-        try
-        {
-            calibrationConfig = calibrationSettings.LockForSession();
-        }
-        catch (CalibrationConfigurationException e)
-        {
-            Abort($"calibration is misconfigured.\n{e.Message}");
-            return;
-        }
+        calibrationConfig = calibrationSettings.LockForSession();
 
         Debug.Log($"{nameof(ProtocolRunner)}: calibration {calibrationConfig}");
 
-        if (!await PrepareCalibration())
+        if (!PrepareCalibration())
         {
             return;
         }
@@ -474,7 +459,7 @@ public class ProtocolRunner : MonoBehaviour
             // The profile is sealed on the way into the first evaluation trial, which is the
             // moment the calibration block is complete. Keyed on the role rather than on a
             // trial number so it stays correct if the block sizes ever change.
-            if (trial.Role == BlockRole.Evaluation && !calibrator.IsSealed)
+            if (trial.Role == BlockRole.Evaluation && !calibrationSealed)
             {
                 SealCalibration();
             }
@@ -484,7 +469,7 @@ public class ProtocolRunner : MonoBehaviour
 
         // A plan with no evaluation block would otherwise finish unsealed, leaving the
         // metadata saying the calibration was never closed.
-        if (!calibrator.IsSealed)
+        if (!calibrationSealed)
         {
             SealCalibration();
         }
@@ -496,53 +481,22 @@ public class ProtocolRunner : MonoBehaviour
     }
 
     /// <summary>
-    /// Load whatever the configured mode needs and build the calibrator, or refuse to run.
+    /// Build the library's movement calibrator when movement calibration is on, or refuse to run.
     /// </summary>
-    /// <remarks>
-    /// Everything that can be known before the first trial is checked before the first trial.
-    /// A population or hybrid session whose artifact is missing, tampered with, or built
-    /// against another model must not start at all: a session that quietly scored raw would be
-    /// filed as a calibrated one, and pooling it with real ones is exactly the error the
-    /// artifact hashes exist to prevent.
-    /// </remarks>
-    private async Awaitable<bool> PrepareCalibration()
+    private bool PrepareCalibration()
     {
         // A rehearsal shortens every trial to three ticks, so no class can reach the nine a
         // centroid needs. Rather than let the operator discover that at the seal, after a
         // participant has sat through the whole thing, refuse the combination up front.
-        if (fastRehearsal && CalibrationModes.IsCalibrated(calibrationConfig.Mode))
+        if (fastRehearsal && calibrationConfig.MovementEnabled)
         {
             Abort($"FAST REHEARSAL cannot be combined with {calibrationConfig.ModeName} " +
                   "calibration: a rehearsal trial records three ticks and a centroid needs " +
-                  $"{PersonalCentroidBuilder.RequiredTicksPerCentroid}. Turn one of the two off.");
+                  $"{MovementCalibrator.SamplesPerEmotion}. Turn one of the two off.");
             return false;
         }
 
-        if (calibrationConfig.NeedsPopulationArtifact)
-        {
-            try
-            {
-                populationProfile = await calibrationSettings.LoadPopulationProfileAsync();
-            }
-            catch (Exception e)
-            {
-                Abort($"the {calibrationConfig.ModeName} mode needs the EmojiHero population " +
-                      $"profile and it could not be loaded.\n{e.Message}");
-                return false;
-            }
-        }
-
-        try
-        {
-            calibrator = RuntimeCalibrator.Create(
-                calibrationConfig.Mode, ClassOrder, populationProfile);
-        }
-        catch (CalibrationConfigurationException e)
-        {
-            Abort($"calibration is misconfigured.\n{e.Message}");
-            return false;
-        }
-
+        calibrator = calibrationConfig.MovementEnabled ? new MovementCalibrator(ClassOrder) : null;
         return true;
     }
 
@@ -559,9 +513,14 @@ public class ProtocolRunner : MonoBehaviour
     /// </remarks>
     private void SealCalibration()
     {
-        calibrator.Seal();
+        calibrationSealed = true;
 
-        var counts = calibrator.CalibrationTickCounts();
+        // Raw sessions have nothing to build and nothing to invalidate.
+        bool valid = calibrator == null || calibrator.Finish();
+        string error = calibrator?.Error ?? string.Empty;
+        bool built = calibrator != null && calibrator.IsReady;
+
+        var counts = calibrator?.KeptSampleCounts() ?? new int[ClassOrder.Length];
         var perClass = new List<string>();
         for (int c = 0; c < counts.Length; ++c)
         {
@@ -570,16 +529,16 @@ public class ProtocolRunner : MonoBehaviour
 
         var outcome = new Dictionary<string, string>
         {
-            { "calibration_valid", calibrator.CalibrationValid ? "true" : "false" },
-            { "calibration_error", calibrator.CalibrationError },
-            { "personal_centroid_built", calibrator.PersonalCentroidsBuilt ? "true" : "false" },
-            { "movement_centroid_built", calibrator.MovementCentroidsBuilt ? "true" : "false" },
+            { "calibration_valid", valid ? "true" : "false" },
+            { "calibration_error", error },
+            { "personal_centroid_built", built ? "true" : "false" },
+            { "movement_centroid_built", built ? "true" : "false" },
             { "calibration_ticks_per_class", string.Join(", ", perClass) },
         };
 
         sessionLogger?.RecordCalibrationOutcome(outcome);
 
-        if (calibrator.CalibrationValid)
+        if (valid)
         {
             Debug.Log($"{nameof(ProtocolRunner)}: calibration sealed, mode " +
                       $"{calibrationConfig.ModeName}, ticks {string.Join(", ", perClass)}");
@@ -587,7 +546,7 @@ public class ProtocolRunner : MonoBehaviour
         else
         {
             Debug.LogError($"{nameof(ProtocolRunner)}: CALIBRATION INVALID -- " +
-                           $"{calibrator.CalibrationError}\nThe session continues and the raw " +
+                           $"{error}\nThe session continues and the raw " +
                            "recording stays usable, but no calibrated prediction will be " +
                            "produced and this recording must not be pooled with valid ones.");
         }
@@ -652,6 +611,13 @@ public class ProtocolRunner : MonoBehaviour
         var rawVotes = new List<TickVote>();
         var calibratedVotes = new List<TickVote>();
 
+        // Each calibration trial is one emotion of the library's movement calibration. The
+        // block is recorded the same way in a raw session; only the calibrator is absent.
+        if (trial.Role == BlockRole.Calibration)
+        {
+            calibrator?.BeginEmotion((int)trial.Emotion);
+        }
+
         for (int i = 0; i < ticks; ++i)
         {
             float nextTick = Time.time + 1f;
@@ -659,26 +625,23 @@ public class ProtocolRunner : MonoBehaviour
             var prediction = await predictor.PredictDetailed();
             float[] scores = prediction?.Scores;
 
-            // The exact window the scores were computed from. Only movement calibration reads
-            // it; the other modes ignore it.
+            // The exact window the scores were computed from; movement calibration reads it.
             float[][] window = prediction?.Window;
 
-            TickCalibration? calibrated = null;
+            NearestCentroid? calibrated = null;
 
             if (trial.Role == BlockRole.Calibration)
             {
-                // Offered in every mode, including raw and population-only. The calibration
-                // block is recorded identically whatever the mode so that recordings stay
-                // comparable; what differs is whether these ticks become centroids.
-                calibrator.ObserveCalibrationTick((int)trial.Emotion, i, scores, window);
+                // By tick position, so tick 0 is dropped and a missed tick stays missed,
+                // exactly as the offline analysis fits the same recording.
+                calibrator?.ObserveAt(i, scores, window);
             }
             else if (PersonalCentroidBuilder.IsScoredTick(i))
             {
-                var decision = calibrator.Classify(i, scores, window);
-                if (decision.Scored)
+                calibrated = calibrator?.Classify(scores, window);
+                if (calibrated.HasValue)
                 {
-                    calibrated = decision;
-                    calibratedVotes.Add(new TickVote(i, decision.ClassIndex));
+                    calibratedVotes.Add(new TickVote(i, calibrated.Value.ClassIndex));
                 }
             }
 
@@ -720,7 +683,7 @@ public class ProtocolRunner : MonoBehaviour
     /// debugging while leaving the participant's experience identical in every mode.
     /// </remarks>
     private void LogCalibrationDebug(PlannedTrial trial, int tick,
-                                     FacePrediction? prediction, TickCalibration? calibrated)
+                                     FacePrediction? prediction, NearestCentroid? calibrated)
     {
         if (!calibrationConfig.DebugLoggingEnabled || trial.Role != BlockRole.Evaluation)
         {
@@ -728,7 +691,7 @@ public class ProtocolRunner : MonoBehaviour
         }
 
         string raw = prediction.HasValue ? prediction.Value.Emotion.ToString() : "(no tracking)";
-        string calibratedText = calibrated.HasValue && calibrated.Value.Scored
+        string calibratedText = calibrated.HasValue
             ? $"{ClassOrder[calibrated.Value.ClassIndex]} (margin " +
               $"{calibrated.Value.Margin:F4})"
             : "(none)";

@@ -46,25 +46,8 @@ namespace VcuSwimLab.Calibration.Tests
             }
         }
 
-        public static string PopulationArtifact => Path.Combine(
-            RepositoryRoot, "Assets", "StreamingAssets",
-            "emojihero_population_centroids_unity.json");
-
         public static string ParityFixture => Path.Combine(
             RepositoryRoot, "Assets", "Tests", "EditMode", "Fixtures", "runtime_calibration_parity.json");
-
-        public static string ReadPopulationArtifact()
-        {
-            string path = PopulationArtifact;
-            if (!File.Exists(path))
-            {
-                throw new FileNotFoundException(
-                    "no exported population artifact. Run "
-                    + "`python Analysis/export_population_artifact_for_unity.py`.", path);
-            }
-
-            return File.ReadAllText(path);
-        }
 
         public static string ReadParityFixture()
         {

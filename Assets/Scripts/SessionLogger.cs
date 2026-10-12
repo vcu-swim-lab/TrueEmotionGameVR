@@ -64,7 +64,6 @@ public sealed class SessionLogger : IDisposable
     // `calibration_mode=raw`, because "this session was not calibrated" is a fact worth
     // recording rather than one to be inferred from missing columns.
     private readonly CalibrationSessionConfig calibration;
-    private readonly PopulationProfile population;
 
     // Only known once the calibration block closes, so the metadata is rewritten then.
     private readonly DateTime startedUtc;
@@ -92,14 +91,12 @@ public sealed class SessionLogger : IDisposable
         int featuresPerFrame,
         IReadOnlyDictionary<string, string> modelInfo,
         IReadOnlyDictionary<string, string> sessionInfo = null,
-        CalibrationSessionConfig calibration = null,
-        PopulationProfile population = null)
+        CalibrationSessionConfig calibration = null)
     {
         this.windowFrames = windowFrames;
         this.featuresPerFrame = featuresPerFrame;
         this.sessionInfo = sessionInfo;
         this.calibration = calibration;
-        this.population = population;
         this.modelInfo = modelInfo;
 
         var startedUtc = DateTime.UtcNow;
@@ -228,7 +225,7 @@ public sealed class SessionLogger : IDisposable
     public void LogPrediction(int trialId, BlockRole blockRole, int repeatIndex,
                               Emotion promptedEmotion, int predictionIndex,
                               FacePrediction? prediction,
-                              TickCalibration? calibrated = null)
+                              NearestCentroid? calibrated = null)
         => LogRow(trialId,
                   Canonical(blockRole),
                   repeatIndex.ToString(CultureInfo.InvariantCulture),
@@ -246,7 +243,7 @@ public sealed class SessionLogger : IDisposable
     private void LogRow(int trialId, string blockRole, string repeatIndex,
                         Emotion promptedEmotion, int predictionIndex,
                         FacePrediction? prediction,
-                        TickCalibration? calibrated)
+                        NearestCentroid? calibrated)
     {
         if (writer == null)
         {
@@ -360,7 +357,7 @@ public sealed class SessionLogger : IDisposable
     /// profile is sealed between the two blocks. The metadata carries the final answer for a
     /// reader who wants it without scanning rows.
     /// </remarks>
-    private void AppendCalibration(Emotion? rawPrediction, TickCalibration? calibrated)
+    private void AppendCalibration(Emotion? rawPrediction, NearestCentroid? calibrated)
     {
         if (calibration == null)
         {
@@ -368,10 +365,11 @@ public sealed class SessionLogger : IDisposable
         }
 
         row.Append(',').Append(calibration.ModeName);
-        row.Append(',').Append(calibration.PersonalEnabled ? "true" : "false");
-        row.Append(',').Append(calibration.PopulationEnabled ? "true" : "false");
+        // Personal and population calibration were removed; their columns stay, always
+        // "false", so recordings from before and after read the same way. Likewise alpha.
+        row.Append(",false,false");
         row.Append(',').Append(calibration.MovementEnabled ? "true" : "false");
-        row.Append(',').Append(calibration.AlphaText);
+        row.Append(',');
 
         // An explicit alias for `predicted_emotion`. Once calibrated columns sit beside it,
         // "predicted" stops being self-explanatory, and a reader comparing methods should not
@@ -380,7 +378,7 @@ public sealed class SessionLogger : IDisposable
             ? Escape(rawPrediction.Value.ToString())
             : string.Empty);
 
-        if (calibrated.HasValue && calibrated.Value.Scored)
+        if (calibrated.HasValue)
         {
             var decision = calibrated.Value;
             row.Append(',').Append(Escape(ClassOrder[decision.ClassIndex].ToString()));
@@ -440,7 +438,7 @@ public sealed class SessionLogger : IDisposable
             row.Append(',').Append(repeatIndex.ToString(CultureInfo.InvariantCulture));
             row.Append(',').Append(Escape(promptedEmotion.ToString()));
             row.Append(',').Append(calibration.ModeName);
-            row.Append(',').Append(calibration.AlphaText);
+            row.Append(',');
 
             AppendTrialVote(raw, promptedEmotion);
             AppendTrialVote(calibrated, promptedEmotion);
@@ -542,15 +540,15 @@ public sealed class SessionLogger : IDisposable
             sb.AppendLine(calibration != null ? "," : "");
             if (calibration != null)
             {
-                sb.AppendLine("    \"calibration_mode\": \"raw, personal, population, hybrid or movement; fixed at session start\",");
-                sb.AppendLine("    \"personal_calibration_enabled\": \"the first operator checkbox, as it was at session start\",");
-                sb.AppendLine("    \"population_calibration_enabled\": \"the second operator checkbox, as it was at session start\",");
-                sb.AppendLine("    \"movement_calibration_enabled\": \"the third operator checkbox, as it was at session start; it runs alone\",");
-                sb.AppendLine("    \"hybrid_alpha\": \"the frozen blend weight on the personal term; empty outside hybrid mode\",");
+                sb.AppendLine("    \"calibration_mode\": \"raw or movement; fixed at session start\",");
+                sb.AppendLine("    \"personal_calibration_enabled\": \"always false; personal calibration was removed, the column is kept for older readers\",");
+                sb.AppendLine("    \"population_calibration_enabled\": \"always false; population calibration was removed, the column is kept for older readers\",");
+                sb.AppendLine("    \"movement_calibration_enabled\": \"the operator checkbox, as it was at session start\",");
+                sb.AppendLine("    \"hybrid_alpha\": \"always empty; hybrid calibration was removed\",");
                 sb.AppendLine("    \"raw_predicted_emotion\": \"the untouched model argmax; equal to predicted_emotion, named so the two methods are distinguishable\",");
-                sb.AppendLine("    \"calibrated_predicted_emotion\": \"nearest centroid under the active mode; blank in raw mode, in the calibration block, on an untracked tick, and when the profile is invalid\",");
-                sb.AppendLine("    \"calibrated_winner_similarity\": \"cosine similarity to the winning centroid; in movement mode the sum of the score and movement cosines (0 to 2)\",");
-                sb.AppendLine("    \"calibrated_runner_up_similarity\": \"cosine similarity to the second-placed centroid; a sum of two cosines in movement mode\",");
+                sb.AppendLine("    \"calibrated_predicted_emotion\": \"movement calibration's decision; blank in raw mode, in the calibration block, on an untracked tick, and when the profile is invalid\",");
+                sb.AppendLine("    \"calibrated_winner_similarity\": \"sum of the score and movement cosines of the winning emotion (0 to 2)\",");
+                sb.AppendLine("    \"calibrated_runner_up_similarity\": \"the same sum for the second-placed emotion\",");
                 sb.AppendLine("    \"calibrated_margin\": \"winner minus runner-up; a small value marks a tick that nearly went the other way\",");
                 sb.AppendLine("    \"calibration_valid\": \"true once a usable profile was sealed; blank on calibration-block rows, which were written before the seal\",");
                 sb.AppendLine("    \"calibration_error\": \"why the profile is unusable, empty when it is fine\"");
@@ -574,16 +572,14 @@ public sealed class SessionLogger : IDisposable
     }
 
     /// <summary>
-    /// The calibration block of the metadata: how this session was configured, which artifact
-    /// it used, and how the calibration block turned out.
+    /// The calibration block of the metadata: how this session was configured and how the
+    /// calibration block turned out.
     /// </summary>
     /// <remarks>
-    /// Provenance and decisions only. The personal centroid vectors and the population
-    /// centroid values are deliberately absent from every file this project writes: a personal
-    /// centroid is a biometric description of one identifiable participant, and the population
-    /// profile already lives in the repository under its own hash. What a reader needs in
-    /// order to interpret a result -- which mode, which alpha, which artifact, whether the
-    /// profile was valid -- is all here, and none of it is a face.
+    /// Provenance and decisions only. The centroid vectors are deliberately absent from every
+    /// file this project writes: a centroid is a biometric description of one identifiable
+    /// participant. What a reader needs in order to interpret a result -- which mode, whether
+    /// the profile was valid -- is all here, and none of it is a face.
     /// </remarks>
     private void WriteCalibrationMetadata(StringBuilder sb)
     {
@@ -597,14 +593,11 @@ public sealed class SessionLogger : IDisposable
         var fields = new List<KeyValuePair<string, string>>
         {
             new("mode", calibration.ModeName),
-            new("personal_calibration_enabled", calibration.PersonalEnabled ? "true" : "false"),
-            new("population_calibration_enabled", calibration.PopulationEnabled ? "true" : "false"),
+            new("personal_calibration_enabled", "false"),
+            new("population_calibration_enabled", "false"),
             new("movement_calibration_enabled", calibration.MovementEnabled ? "true" : "false"),
-            new("hybrid_alpha", calibration.AlphaText),
-            new("hybrid_alpha_is_frozen",
-                "true; an experimental constant selected on the EmojiHero validation split "
-                + "before the test split was opened, and not settable from the inspector, the "
-                + "command line or a config file"),
+            new("hybrid_alpha", string.Empty),
+            new("calibration_source", "VREmotionDetection library, MovementCalibrator"),
             new("epsilon", CalibrationMath.Epsilon.ToString("R", CultureInfo.InvariantCulture)),
             new("feature_space", CalibrationMath.FeatureSpaceName),
             new("transform", CalibrationMath.TransformName),
@@ -617,7 +610,7 @@ public sealed class SessionLogger : IDisposable
                 + "inclusive; tick 0 is a transition sample and is excluded"),
             new("personal_centroid_required_ticks",
                 PersonalCentroidBuilder.RequiredTicksPerCentroid.ToString(CultureInfo.InvariantCulture)),
-            new("runtime_calibration_version", RuntimeCalibrator.ImplementationVersion),
+            new("runtime_calibration_version", MovementCalibrator.ImplementationVersion),
             // Console logging, not an on-headset overlay. The participant is shown nothing in
             // any mode, and this field must not be read as saying otherwise.
             new("debug_logging_enabled", calibration.DebugLoggingEnabled ? "true" : "false"),
@@ -627,27 +620,13 @@ public sealed class SessionLogger : IDisposable
                 "most ticks -> the trial's final tracked tick -> first tied class in class order"),
         };
 
-        if (calibration.Mode == CalibrationMode.Movement)
+        if (calibration.MovementEnabled)
         {
             fields.Add(new("movement_feature", CalibrationMath.MovementFeatureName));
             fields.Add(new("movement_rule", CalibrationMath.MovementRuleName));
         }
 
-        if (population != null)
-        {
-            fields.Add(new("population_artifact_schema_version", population.SchemaVersion));
-            fields.Add(new("population_artifact_semantic_sha256", population.SemanticSha256));
-            fields.Add(new("population_artifact_conversion_sha256", population.ConversionSha256));
-            fields.Add(new("population_artifact_model_sha256", population.ModelSha256));
-            fields.Add(new("population_artifact_source_split", population.SourceSplit));
-            fields.Add(new("population_artifact_estimator", population.Estimator));
-            fields.Add(new("population_artifact_participants",
-                           population.ParticipantCount.ToString(CultureInfo.InvariantCulture)));
-        }
-        else
-        {
-            fields.Add(new("population_artifact", "not loaded; this mode does not use one"));
-        }
+        fields.Add(new("population_artifact", "not loaded; population calibration was removed"));
 
         if (calibrationOutcome != null)
         {

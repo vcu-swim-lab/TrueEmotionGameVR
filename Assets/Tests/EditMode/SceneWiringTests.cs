@@ -196,36 +196,30 @@ namespace VcuSwimLab.Calibration.Tests
                 // Named exactly as the fields are declared. A rename that did not reach the
                 // scene would leave the old key here holding the operator's choice while the
                 // new field silently took its default.
-                CollectionAssert.Contains(component.Fields.Keys, "enablePersonalCalibration");
-                CollectionAssert.Contains(component.Fields.Keys,
-                                          "enableEmojiHeroPopulationCalibration");
-                CollectionAssert.Contains(component.Fields.Keys,
-                                          "enableCalibrationDebugLogging");
+                CollectionAssert.Contains(component.Fields.Keys, "enableMovementCalibration");
+                CollectionAssert.Contains(component.Fields.Keys, "enableCalibrationDebugLogging");
+
+                // The removed modes must not linger: a stale key reads as a live setting.
+                CollectionAssert.DoesNotContain(component.Fields.Keys, "enablePersonalCalibration");
+                CollectionAssert.DoesNotContain(component.Fields.Keys,
+                                                "enableEmojiHeroPopulationCalibration");
             }
         }
 
         [Test]
-        public void Both_checkboxes_are_serialised_off_which_is_raw_mode()
+        public void The_committed_scene_runs_movement_calibration_without_debug_logging()
         {
             var settings = With(ScriptGuid(CalibrationSettingsScript));
             Assert.IsNotEmpty(settings);
 
             foreach (var component in settings)
             {
-                bool personal = component.Fields["enablePersonalCalibration"] == "1";
-                bool population = component.Fields["enableEmojiHeroPopulationCalibration"] == "1";
-
-                Assert.IsFalse(personal, "enablePersonalCalibration is checked in the scene");
-                Assert.IsFalse(population,
-                               "enableEmojiHeroPopulationCalibration is checked in the scene");
+                // A build made from the committed scene runs movement calibration with no
+                // change in the editor; switching it off is a deliberate edit.
+                Assert.AreEqual("1", component.Fields["enableMovementCalibration"],
+                                "enableMovementCalibration is not checked in the scene");
                 Assert.IsFalse(component.Fields["enableCalibrationDebugLogging"] == "1",
                                "enableCalibrationDebugLogging is checked in the scene");
-
-                Assert.AreEqual(CalibrationMode.Raw,
-                                CalibrationModes.FromToggles(personal, population),
-                                "the committed scene must record raw mode, so a session run "
-                                + "without deliberately enabling calibration behaves exactly as "
-                                + "this protocol did before runtime calibration existed");
             }
         }
 

@@ -1,7 +1,9 @@
 {
-    "name": "VcuSwimLab.Calibration",
+    "name": "VcuSwimLab.Calibration.Protocol",
     "rootNamespace": "VcuSwimLab.Calibration",
-    "references": [],
+    "references": [
+        "VcuSwimLab.Calibration"
+    ],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,

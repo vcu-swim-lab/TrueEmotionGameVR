@@ -4,7 +4,8 @@
     "references": [
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner",
-        "VcuSwimLab.Calibration"
+        "VcuSwimLab.Calibration",
+        "VcuSwimLab.Calibration.Protocol"
     ],
     "includePlatforms": [
         "Editor"

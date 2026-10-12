@@ -14,8 +14,8 @@ using UnityEngine;
 //   Editor:     Tools > Calibration > Wire calibration settings into the open scene
 //   Batch mode: -executeMethod CalibrationSceneWiring.WireMainScene
 //
-// It is idempotent, and it changes nothing except adding a missing component: the two
-// checkboxes keep their defaults, both off, which is raw mode.
+// It is idempotent, and it changes nothing except adding a missing component: its movement
+// calibration checkbox keeps its default, off, which is raw mode.
 public static class CalibrationSceneWiring
 {
     private const string MainScenePath = "Assets/Scenes/Main.unity";
@@ -95,8 +95,7 @@ public static class CalibrationSceneWiring
                 var config = settings.LockForSession();
                 Debug.Log($"{nameof(CalibrationSceneWiring)}: '{runner.name}' carries "
                           + $"{nameof(RuntimeCalibrationSettings)}; mode is '{config.ModeName}' "
-                          + $"(personal {config.PersonalEnabled}, "
-                          + $"population {config.PopulationEnabled})");
+                          + $"(movement calibration {config.MovementEnabled})");
             }
         }
 
@@ -199,7 +198,7 @@ public static class CalibrationSceneWiring
 
                 Debug.Log($"{nameof(CalibrationSceneWiring)}: added "
                           + $"{nameof(RuntimeCalibrationSettings)} to '{runner.name}' "
-                          + "(both checkboxes off, which is raw mode)");
+                          + "(movement calibration off, which is raw mode)");
             }
         }
 

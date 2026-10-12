@@ -31,7 +31,7 @@ namespace VcuSwimLab.Calibration.Tests
                 while (directory != null)
                 {
                     if (Directory.Exists(Path.Combine(directory.FullName, "Assets"))
-                        && Directory.Exists(Path.Combine(directory.FullName, "Analysis")))
+                        && Directory.Exists(Path.Combine(directory.FullName, "ProjectSettings")))
                     {
                         return directory.FullName;
                     }
@@ -42,7 +42,7 @@ namespace VcuSwimLab.Calibration.Tests
                 throw new InvalidOperationException(
                     "could not find the project root: no ancestor of "
                     + Assembly.GetExecutingAssembly().Location
-                    + " holds both an Assets and an Analysis directory");
+                    + " holds both an Assets and a ProjectSettings directory");
             }
         }
 
@@ -51,7 +51,7 @@ namespace VcuSwimLab.Calibration.Tests
             "emojihero_population_centroids_unity.json");
 
         public static string ParityFixture => Path.Combine(
-            RepositoryRoot, "Analysis", "fixtures", "runtime_calibration_parity.json");
+            RepositoryRoot, "Assets", "Tests", "EditMode", "Fixtures", "runtime_calibration_parity.json");
 
         public static string ReadPopulationArtifact()
         {

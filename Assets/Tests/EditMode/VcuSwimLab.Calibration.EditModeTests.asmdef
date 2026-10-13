@@ -1,0 +1,25 @@
+{
+    "name": "VcuSwimLab.Calibration.EditModeTests",
+    "rootNamespace": "VcuSwimLab.Calibration.Tests",
+    "references": [
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner",
+        "VcuSwimLab.Calibration",
+        "VcuSwimLab.Calibration.Protocol"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

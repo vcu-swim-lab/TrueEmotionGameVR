@@ -695,7 +695,9 @@ GameObject:
   - component: {fileID: 964688075}
   - component: {fileID: 964688076}
   - component: {fileID: 964688078}
+  - component: {fileID: 964688080}
   - component: {fileID: 964688079}
+  - component: {fileID: 964688081}
   m_Layer: 7
   m_Name: Canvas
   m_TagString: Untagged
@@ -835,12 +837,13 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 964688070}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 8289b5e9f362b36439ae8d269a35a379, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
   soundModelTemp: {fileID: 0}
+  progressBar: {fileID: 0}
 --- !u!114 &964688079
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -850,10 +853,42 @@ MonoBehaviour:
   m_GameObject: {fileID: 964688070}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7ac03dcb67c3ba449a049f63716f7b7c, type: 3}
+  m_Script: {fileID: 11500000, guid: 1dcb873734554274bb648be9fe18a8c3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  config: {fileID: 11400000, guid: 65b478f04a24a994f9609475d22068ab, type: 2}
+--- !u!114 &964688080
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 964688070}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1e701289fcb9a714db0f5f067a0c54c1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  faceModel: {fileID: 5022602860645237092, guid: c8c2538830cca7d42b35813f72fa93bf, type: 3}
+  useCalibration: 0
+--- !u!114 &964688081
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 964688070}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6a72aa5d94c0966428797b51aa22429f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  instructionText: {fileID: 0}
+  promptSeconds: 2
+  countdownSeconds: 3
+  completeSeconds: 1
+  relaxSeconds: 4
+  randomizationSeed: 0
+  fastRehearsal: 0
 --- !u!1 &1066909192
 GameObject:
   m_ObjectHideFlags: 0

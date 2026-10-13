@@ -1,0 +1,11 @@
+<linker>
+  <!--
+    Managed stripping removes interface method implementations inside
+    Unity.InferenceEngine that Burst still resolves while hashing method
+    references, which breaks the Android IL2CPP build with:
+      "Failed to resolve method with name hash ... in type definition
+       0x0200009C in Unity.InferenceEngine.dll"
+    Preserving the assembly keeps those methods in the stripped output.
+  -->
+  <assembly fullname="Unity.InferenceEngine" preserve="all"/>
+</linker>

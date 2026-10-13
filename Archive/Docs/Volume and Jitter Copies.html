@@ -1,0 +1,366 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Volume and Jitter Copies</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column. Part 1 = a live copy machine on a real window; Part 2 = the rule, measured effects, results. */
+:root {
+  --bg: #f5f7f8;
+  --surface: #ffffff;
+  --fg: #17212b;
+  --muted: #5b6875;
+  --line: #d9e0e6;
+  --track: #e8edf0;
+  --vol: #c0661a;          /* volume: one multiplier for the window */
+  --vol-soft: #f6e3d2;
+  --jit: #6f4fc4;          /* jitter: one multiplier per value */
+  --jit-soft: #e6def8;
+  --copy: #0f7c78;         /* the final copy */
+  --down: #2f6fb3;         /* multiplier below 1 */
+  --good: #1f7a3a;
+  --font-display: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11171c; --surface: #182128; --fg: #e4ebf0; --muted: #96a4b0; --line: #2b3741; --track: #22303a;
+    --vol: #f0a058; --vol-soft: #3d2a18; --jit: #b49af0; --jit-soft: #2e2547; --copy: #3fc1b8; --down: #6fa8e6;
+    --good: #5cc27a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11171c; --surface: #182128; --fg: #e4ebf0; --muted: #96a4b0; --line: #2b3741; --track: #22303a;
+  --vol: #f0a058; --vol-soft: #3d2a18; --jit: #b49af0; --jit-soft: #2e2547; --copy: #3fc1b8; --down: #6fa8e6;
+  --good: #5cc27a; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-display); font-size: 16px; line-height: 1.55; }
+.wrap { max-width: 1080px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 72px; display: flex; flex-direction: column; gap: 48px; }
+h1 { font-size: clamp(30px, 5vw, 42px); line-height: 1.1; margin: 0 0 12px; letter-spacing: -0.01em; }
+h2 { font-size: 23px; margin: 0 0 6px; text-wrap: balance; }
+h3 { margin: 0 0 8px; font-size: 16px; }
+p { margin: 0; max-width: 68ch; }
+.lede { color: var(--muted); font-size: 18px; }
+.note { color: var(--muted); font-size: 14px; }
+.eyebrow { font-family: var(--font-data); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--copy); margin-bottom: 4px; }
+.part-title { font-family: var(--font-data); font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); border-top: 1px solid var(--line); padding-top: 28px; }
+section { display: flex; flex-direction: column; gap: 16px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; min-width: 0; }
+.scroll { overflow-x: auto; }
+.mono { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+.how { border-left: 3px solid var(--copy); padding: 4px 0 4px 12px; font-size: 14.5px; max-width: 72ch; }
+.how b { color: var(--copy); }
+
+.steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 760px) { .steps { grid-template-columns: minmax(0, 1fr); } }
+.step { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: flex; flex-direction: column; gap: 6px; border-top: 4px solid var(--line); }
+.step.v { border-top-color: var(--vol); }
+.step.j { border-top-color: var(--jit); }
+.step.c { border-top-color: var(--copy); }
+.step .n { font-family: var(--font-data); font-size: 13px; color: var(--muted); }
+.step b { font-size: 18px; }
+.step span { color: var(--muted); font-size: 14.5px; }
+
+.controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.pick button, .btn { font: inherit; font-size: 15px; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 7px 15px; cursor: pointer; }
+.pick { display: flex; gap: 8px; flex-wrap: wrap; }
+.pick button:hover, .btn:hover { border-color: var(--muted); }
+.pick button[aria-pressed="true"] { background: var(--fg); border-color: var(--fg); color: var(--surface); }
+.btn.primary { background: var(--copy); border-color: var(--copy); color: var(--surface); font-weight: 600; }
+:focus-visible { outline: 2px solid var(--copy); outline-offset: 2px; }
+
+.machine { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; align-items: start; }
+@media (max-width: 980px) { .machine { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .machine { grid-template-columns: minmax(0, 1fr); } }
+.stage { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.stage .tag { font-family: var(--font-data); font-size: 11.5px; letter-spacing: 0.06em; text-transform: uppercase; }
+.stage .what { font-size: 13.5px; color: var(--muted); min-height: 2.6em; }
+.stage.v .tag { color: var(--vol); }
+.stage.j .tag { color: var(--jit); }
+.stage.c .tag { color: var(--copy); }
+table.grid { border-collapse: separate; border-spacing: 2px; font-size: 11px; width: 100%; }
+table.grid th { font-weight: 500; color: var(--muted); }
+table.grid th.col { height: 92px; vertical-align: bottom; padding: 0 0 4px; }
+table.grid th.col div { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; font-size: 11px; color: var(--fg); margin: 0 auto; }
+table.grid th.row { text-align: right; padding-right: 4px; font-family: var(--font-data); font-size: 10.5px; white-space: nowrap; }
+table.grid td { height: 26px; border-radius: 4px; text-align: center; font-family: var(--font-data); font-size: 10px; font-variant-numeric: tabular-nums; }
+.big-mult { font-family: var(--font-data); font-size: 26px; font-weight: 500; color: var(--vol); }
+
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+.fact { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
+.fact .k { font-size: 13px; color: var(--muted); }
+.fact .v { font-family: var(--font-data); font-size: 18px; font-variant-numeric: tabular-nums; }
+
+.epoch { display: flex; flex-direction: column; gap: 8px; }
+.bar2 { display: flex; height: 34px; border-radius: 8px; overflow: hidden; font-size: 13px; font-weight: 600; }
+.bar2 div { display: flex; align-items: center; justify-content: center; color: var(--surface); }
+
+table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
+table.t th { text-align: left; font-weight: 600; font-size: 13px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+table.t td { padding: 6px 8px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+table.t td.num { font-family: var(--font-data); text-align: right; }
+table.t tr.hl td { font-weight: 700; }
+code { font-family: var(--font-data); font-size: 13px; background: var(--track); padding: 1px 5px; border-radius: 4px; }
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">Teacher model · training data augmentation</div>
+  <h1>Volume and jitter copies</h1>
+  <p class="lede">During training, the model sees every real window plus one changed copy of it. The copy gets two changes:
+  <b style="color:var(--vol)">volume</b> makes the whole face quieter or louder, and <b style="color:var(--jit)">jitter</b> changes
+  every single value a little. All windows on this page are real training windows.</p>
+</header>
+
+<div class="part-title">Part 1 · The short version</div>
+
+<section>
+  <h2>Three steps for one copy</h2>
+  <div class="steps">
+    <div class="step v"><span class="n">step 1 · one number</span><b>Volume</b>
+      <span>The whole window is multiplied by one random number. The face gets quieter or louder, but keeps its shape.</span></div>
+    <div class="step j"><span class="n">step 2 · 350 numbers</span><b>Jitter</b>
+      <span>Every value (5 frames × 70 action units) is multiplied by its own random number between 0.8 and 1.2.</span></div>
+    <div class="step c"><span class="n">step 3 · safety rules</span><b>Clip and check</b>
+      <span>Values stay between 0 and 1. A Neutral copy is scaled down if any value goes above 0.25.</span></div>
+  </div>
+</section>
+
+<section>
+  <div>
+    <div class="eyebrow">Try it</div>
+    <h2>Make a copy of a real window</h2>
+  </div>
+  <p class="how"><b>How to read:</b> each box is the same window at a different step. Rows are the 5 frames (0.1 s each), columns
+  are the 8 action units that move most in this window. Darker = more movement. Press <b>Make a new copy</b> to draw new random
+  numbers, as the training does in every epoch.</p>
+  <div class="controls">
+    <div class="pick" id="pick" role="group" aria-label="Choose a window"></div>
+    <button class="btn primary" id="again" type="button">Make a new copy</button>
+  </div>
+  <div class="machine">
+    <div class="stage"><span class="tag">Original window</span><span class="what" id="origWhat"></span><div class="scroll"><table class="grid" id="g0"></table></div></div>
+    <div class="stage v"><span class="tag">1 · after volume</span><span class="what" id="volWhat"></span><div class="scroll"><table class="grid" id="g1"></table></div></div>
+    <div class="stage j"><span class="tag">2 · jitter numbers</span><span class="what">Blue = below 1 (smaller), orange = above 1 (bigger).</span><div class="scroll"><table class="grid" id="g2"></table></div></div>
+    <div class="stage c"><span class="tag">3 · final copy</span><span class="what" id="finWhat"></span><div class="scroll"><table class="grid" id="g3"></table></div></div>
+  </div>
+  <div class="facts" id="facts"></div>
+</section>
+
+<section>
+  <div>
+    <div class="eyebrow">In training</div>
+    <h2>Every epoch: all real windows plus one new copy of each</h2>
+  </div>
+  <div class="panel epoch">
+    <div class="bar2" role="img" aria-label="8,181 real windows and 8,181 copies">
+      <div style="flex:1;background:var(--fg)">8,181 real windows</div>
+      <div style="flex:1;background:var(--copy)">8,181 new copies</div>
+    </div>
+    <p class="note">16,362 windows per epoch, shuffled together. The copies are made again with new random numbers at the start of
+    every epoch and are never saved. The real windows are never changed. A copy keeps the label and the sample weight of its original.</p>
+  </div>
+</section>
+
+<section>
+  <div>
+    <div class="eyebrow">Result</div>
+    <h2>Does it help?</h2>
+  </div>
+  <div class="panel scroll">
+    <table class="t">
+      <tr><th>Model (with EmojiHero)</th><th>Test set, VR combined</th><th>Headset, no calibration</th><th>Headset, personal</th><th>Headset, movement</th></tr>
+      <tr><td>No copies (D)</td><td class="num">0.464*</td><td class="num">0.584</td><td class="num">0.652</td><td class="num">0.737</td></tr>
+      <tr><td>Volume (C)</td><td class="num">0.484*</td><td class="num">0.598</td><td class="num">0.671</td><td class="num">0.741</td></tr>
+      <tr><td>Jitter</td><td class="num">0.485</td><td class="num">0.576</td><td class="num">0.634</td><td class="num">0.738</td></tr>
+      <tr class="hl"><td>Volume + jitter</td><td class="num">0.495</td><td class="num">0.616</td><td class="num">0.661</td><td class="num">0.740</td></tr>
+    </table>
+    <p class="note" style="margin-top:10px">Macro-F1. Test set: the Colab runs with seed 42 (* the matching runs of the same notebook).
+    Headset: 10 sessions, tick level, 9 of them one person; D and C are the deployed ONNX models.</p>
+  </div>
+  <p><b>Short answer:</b> volume + jitter is the best model when the player is not calibrated (0.616 against 0.584, better in 8 of 10
+  sessions). With movement calibration every model gives the same result (0.737 to 0.741), so the copies no longer matter there.
+  Only one seed was trained, and the gain of jitter on top of volume (about +0.01) is smaller than the seed noise (about 0.02).</p>
+</section>
+
+<div class="part-title">Part 2 · The details</div>
+
+<section>
+  <div>
+    <div class="eyebrow">The exact rule</div>
+    <h2>How the numbers are drawn</h2>
+  </div>
+  <div class="panel scroll">
+    <table class="t">
+      <tr><th>Step</th><th>Rule</th><th>Why</th></tr>
+      <tr><td><b style="color:var(--vol)">Face size</b></td><td>mean over the 5 frames of the sum of the 63 face action units</td><td>tells how strong this face is</td></tr>
+      <tr><td><b style="color:var(--vol)">Volume range</b></td><td>from <code>0.8 ÷ size</code> to <code>5.5 ÷ size</code>, each kept inside ×1/3 … ×3</td><td>aims the copy at a face size between 0.8 (quiet headset faces) and 5.5 (strong faces)</td></tr>
+      <tr><td><b style="color:var(--vol)">Volume number</b></td><td>random, log-uniform in that range (×0.5 and ×2 are equally likely)</td><td>quieter and louder copies are balanced</td></tr>
+      <tr><td><b style="color:var(--vol)">Neutral volume</b></td><td>×0.5 … ×1.5, not aimed at a size</td><td>a resting face must stay a resting face</td></tr>
+      <tr><td><b style="color:var(--jit)">Jitter numbers</b></td><td>one per action unit per frame, uniform 0.8 … 1.2 (mean 1.0)</td><td>small changes of shape and timing; zero stays zero, so no new movement appears</td></tr>
+      <tr><td><b style="color:var(--copy)">Clip</b></td><td>every value kept in 0 … 1</td><td>the headset never reports more than 1</td></tr>
+      <tr><td><b style="color:var(--copy)">Neutral check</b></td><td>if the largest value of a Neutral copy is above 0.25, the whole copy is scaled down to 0.25</td><td>the same limit model C used</td></tr>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div>
+    <div class="eyebrow">Measured on all 8,181 training windows</div>
+    <h2>What each method does to the windows</h2>
+  </div>
+  <p class="how"><b>How to read:</b> shape similarity is the cosine between a copy and its original (1.000 = the same shape).
+  Size ratio is copy size ÷ original size for expressive windows: below 1 = quieter, above 1 = louder.
+  For comparison, the same person on different days has a shape similarity of 0.88, and two different people 0.50.</p>
+  <div class="panel scroll"><table class="t" id="stats"></table></div>
+  <p class="note">The median volume copy is quieter (×0.74) because most training windows are strong EmojiHero faces, which are
+  pulled down toward headset strength. Quiet windows are pulled up.</p>
+</section>
+
+<section>
+  <div>
+    <div class="eyebrow">Limits</div>
+  </div>
+  <p class="note">One seed per model. The headset sessions are mostly one person. Jitter changes the shape only a little (0.993), much
+  less than the difference between people (0.50), so it cannot teach the model how other people look.</p>
+</section>
+
+</div>
+
+<script>
+const D = {"au_names": ["BrowLowererL", "BrowLowererR", "CheekPuffL", "CheekPuffR", "CheekRaiserL", "CheekRaiserR", "CheekSuckL", "CheekSuckR", "ChinRaiserB", "ChinRaiserT", "DimplerL", "DimplerR", "EyesClosedL", "EyesClosedR", "EyesLookDownL", "EyesLookDownR", "EyesLookLeftL", "EyesLookLeftR", "EyesLookRightL", "EyesLookRightR", "EyesLookUpL", "EyesLookUpR", "InnerBrowRaiserL", "InnerBrowRaiserR", "JawDrop", "JawSidewaysLeft", "JawSidewaysRight", "JawThrust", "LidTightenerL", "LidTightenerR", "LipCornerDepressorL", "LipCornerDepressorR", "LipCornerPullerL", "LipCornerPullerR", "LipFunnelerLB", "LipFunnelerLT", "LipFunnelerRB", "LipFunnelerRT", "LipPressorL", "LipPressorR", "LipPuckerL", "LipPuckerR", "LipStretcherL", "LipStretcherR", "LipSuckLB", "LipSuckLT", "LipSuckRB", "LipSuckRT", "LipTightenerL", "LipTightenerR", "LipsToward", "LowerLipDepressorL", "LowerLipDepressorR", "MouthLeft", "MouthRight", "NoseWrinklerL", "NoseWrinklerR", "OuterBrowRaiserL", "OuterBrowRaiserR", "UpperLidRaiserL", "UpperLidRaiserR", "UpperLipRaiserL", "UpperLipRaiserR", "TongueTipInterdental", "TongueTipAlveolar", "TongueFrontDorsalPalate", "TongueMidDorsalPalate", "TongueBackDorsalVelar", "TongueOut", "TongueRetreat"], "examples": [{"label": "quiet Anger (our VR data)", "cls": 0, "window": [[0.06159999966621399, 0.025499999523162842, 0.0, 0.0, 0.01080000028014183, 0.00019999999494757503, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.03920000046491623, 0.04699999839067459, 0.0, 0.0, 0.0, 0.032099999487400055, 0.04320000112056732, 0.0, 0.0, 0.0, 0.0, 0.01810000091791153, 0.06289999932050705, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.01510000042617321, 0.020400000736117363, 0.2597000002861023, 0.5529000163078308, 0.0, 0.0, 0.00279999990016222, 0.034699998795986176, 0.0, 0.0, 0.0003000000142492354, 0.0, 0.0007999999797903001], [0.044199999421834946, 0.013299999758601189, 0.0, 0.0, 0.01080000028014183, 9.999999747378752e-05, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.04089999943971634, 0.04529999941587448, 0.0, 0.0, 0.0, 0.024399999529123306, 0.039900001138448715, 0.0, 0.0, 0.0, 0.0, 0.008899999782443047, 0.025599999353289604, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.015699999406933784, 0.02250000089406967, 0.23960000276565552, 0.5462999939918518, 0.0, 0.0, 0.002199999988079071, 0.027799999341368675, 0.0, 0.0, 0.00019999999494757503, 0.0, 0.0006000000284984708], [0.03229999914765358, 0.004800000227987766, 0.0, 0.0, 0.010900000110268593, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.03700000047683716, 0.04919999837875366, 0.0, 0.0, 0.0, 0.012299999594688416, 0.02290000021457672, 0.0, 0.0, 0.0, 0.0, 0.003800000064074993, 0.026799999177455902, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.006899999920278788, 0.013000000268220901, 0.22669999301433563, 0.5465999841690063, 0.0, 0.0, 0.0026000000070780516, 0.003800000064074993, 0.0, 0.0003000000142492354, 9.999999747378752e-05, 0.0, 0.00019999999494757503], [0.03310000151395798, 0.007000000216066837, 0.0, 0.0, 0.0071000000461936, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.035100001841783524, 0.051100000739097595, 0.0, 0.0, 0.0, 0.0071000000461936, 0.011300000362098217, 0.0, 0.0, 0.0, 0.0, 0.0012000000569969416, 0.007699999958276749, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.005499999970197678, 0.007499999832361937, 0.21739999949932098, 0.5570999979972839, 0.0, 0.0, 0.0017999999690800905, 0.002400000113993883, 0.0, 0.00019999999494757503, 9.999999747378752e-05, 0.0, 0.00019999999494757503], [0.039000000804662704, 0.012500000186264515, 0.0, 0.0, 0.010099999606609344, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.03880000114440918, 0.04740000143647194, 0.0, 0.0, 0.0, 0.00419999985024333, 0.019600000232458115, 0.0, 0.0, 0.0, 0.0, 0.0007999999797903001, 0.009399999864399433, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0034000000450760126, 0.004900000058114529, 0.23890000581741333, 0.5015000104904175, 0.0, 0.0, 0.00019999999494757503, 0.0003000000142492354, 0.0, 0.0, 0.0, 0.0, 0.0]]}, {"label": "strong Happiness (EmojiHero)", "cls": 3, "window": [[0.1152999997138977, 0.07479999959468842, 0.0, 9.999999747378752e-05, 0.7103999853134155, 0.6762999892234802, 0.0, 0.0, 0.0, 0.2442999929189682, 0.3434999883174896, 0.3384999930858612, 0.094200000166893, 0.00039999998989515007, 0.12540000677108765, 0.05290000140666962, 0.0, 0.0, 0.2110999971628189, 0.12520000338554382, 0.0, 0.0, 0.042500000447034836, 0.05849999934434891, 0.22830000519752502, 0.00559999980032444, 0.01080000028014183, 0.010900000110268593, 0.4203000068664551, 0.4706999957561493, 0.00800000037997961, 0.006399999838322401, 0.848800003528595, 0.8555999994277954, 0.0, 0.006300000008195639, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.09239999949932098, 0.09239999949932098, 0.22920000553131104, 0.302700012922287, 0.1784999966621399, 0.26829999685287476, 0.0, 0.0, 0.015399999916553497, 0.4049000144004822, 0.36719998717308044, 0.00930000003427267, 0.0, 0.019600000232458115, 0.0, 0.027300000190734863, 0.03629999980330467, 0.0, 0.05939999967813492, 0.515999972820282, 0.5152000188827515, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.050999999046325684, 0.02800000086426735, 0.0, 0.0, 0.44589999318122864, 0.3961000144481659, 0.0, 0.0, 0.008799999952316284, 0.131400004029274, 0.19020000100135803, 0.18979999423027039, 0.02160000056028366, 0.0, 0.021700000390410423, 0.00019999999494757503, 0.0, 0.0, 0.1932000070810318, 0.10679999738931656, 0.0, 0.0, 0.030700000002980232, 0.048700001090765, 0.06759999692440033, 0.003700000001117587, 0.010900000110268593, 0.00279999990016222, 0.27140000462532043, 0.3912999927997589, 0.0026000000070780516, 0.0010999999940395355, 0.6470000147819519, 0.6586999893188477, 0.0, 0.0012000000569969416, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.06030000001192093, 0.060100000351667404, 0.23100000619888306, 0.2401999980211258, 0.1761000007390976, 0.21979999542236328, 0.0, 0.0, 0.025499999523162842, 0.1453000009059906, 0.11760000139474869, 0.010599999688565731, 0.004800000227987766, 0.02370000071823597, 0.014700000174343586, 0.030300000682473183, 0.039500001817941666, 0.00039999998989515007, 0.14429999887943268, 0.4991999864578247, 0.5033000111579895, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.04089999943971634, 0.019099999219179153, 0.0, 0.0, 0.3772999942302704, 0.3325999975204468, 0.0, 0.0, 0.020800000056624413, 0.10670000314712524, 0.16609999537467957, 0.15780000388622284, 0.007699999958276749, 0.0, 0.007699999958276749, 0.0, 0.0, 0.0, 0.15119999647140503, 0.06459999829530716, 0.0, 0.0, 0.027000000700354576, 0.05420000106096268, 0.04749999940395355, 0.006000000052154064, 0.010900000110268593, 0.00039999998989515007, 0.2648000121116638, 0.4512999951839447, 0.0005000000237487257, 0.0003000000142492354, 0.52920001745224, 0.5351999998092651, 0.0, 0.0003000000142492354, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.041099999099969864, 0.04580000042915344, 0.22050000727176666, 0.2321999967098236, 0.16179999709129333, 0.2126999944448471, 0.0, 0.0, 0.028999999165534973, 0.09229999780654907, 0.07720000296831131, 0.01080000028014183, 0.007699999958276749, 0.07069999724626541, 0.07859999686479568, 0.04610000178217888, 0.07689999788999557, 0.013899999670684338, 0.2786000072956085, 0.49950000643730164, 0.5076000094413757, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.034299999475479126, 0.01080000028014183, 0.0, 0.0, 0.3885999917984009, 0.34119999408721924, 0.0, 0.0, 0.014000000432133675, 0.10970000177621841, 0.19200000166893005, 0.1907999962568283, 0.019999999552965164, 0.0, 0.019999999552965164, 0.0, 0.0, 0.0, 0.1664000004529953, 0.07930000126361847, 0.0, 0.0, 0.025599999353289604, 0.0575999990105629, 0.04989999905228615, 0.009600000455975533, 0.010900000110268593, 9.999999747378752e-05, 0.272599995136261, 0.4641999900341034, 9.999999747378752e-05, 9.999999747378752e-05, 0.558899998664856, 0.5677000284194946, 0.0, 9.999999747378752e-05, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.04749999940395355, 0.04960000142455101, 0.21870000660419464, 0.23960000276565552, 0.15770000219345093, 0.22269999980926514, 0.0, 0.0, 0.026399999856948853, 0.13220000267028809, 0.09539999812841415, 0.01080000028014183, 0.00989999994635582, 0.047600001096725464, 0.048500001430511475, 0.050200000405311584, 0.08009999990463257, 0.007600000128149986, 0.2587999999523163, 0.4927999973297119, 0.5090000033378601, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.03269999846816063, 0.012000000104308128, 0.0, 0.0, 0.3716000020503998, 0.33739998936653137, 0.0, 0.0, 0.036400001496076584, 0.09679999947547913, 0.11909999698400497, 0.11919999867677689, 0.015699999406933784, 0.0, 0.015699999406933784, 0.0, 0.0, 0.0, 0.1306000053882599, 0.04349999874830246, 0.0, 0.0, 0.027400000020861626, 0.05779999867081642, 0.02759999968111515, 0.003100000089034438, 0.010900000110268593, 0.0, 0.2662000060081482, 0.42890000343322754, 0.0, 0.0, 0.5098000168800354, 0.5182999968528748, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.004800000227987766, 0.004800000227987766, 0.0333000011742115, 0.0333000011742115, 0.2565000057220459, 0.2190999984741211, 0.19110000133514404, 0.20250000059604645, 0.0, 0.0, 0.0340999998152256, 0.025699999183416367, 0.015599999576807022, 0.0142000000923872, 0.010700000450015068, 0.06700000166893005, 0.06800000369548798, 0.05770000070333481, 0.08190000057220459, 0.004600000102072954, 0.24560000002384186, 0.4684999883174896, 0.4745999872684479, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]]}, {"label": "Neutral (our VR data)", "cls": 4, "window": [[0.00019999999494757503, 0.00019999999494757503, 0.0, 0.0, 0.028999999165534973, 0.029200000688433647, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.02419999986886978, 0.11050000041723251, 0.0, 0.0, 0.0, 0.0, 9.999999747378752e-05, 0.0, 0.028599999845027924, 0.004000000189989805, 0.01080000028014183, 0.0010000000474974513, 0.012900000438094139, 0.0, 0.010900000110268593, 0.00039999998989515007, 0.0, 0.0, 0.0, 0.003800000064074993, 0.0, 0.0003000000142492354, 0.0, 0.0, 0.03139999881386757, 0.018300000578165054, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.06920000165700912, 0.05810000002384186, 0.028300000354647636, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.02319999970495701, 0.0012000000569969416, 0.0, 0.0, 0.0, 9.999999747378752e-05, 0.0, 0.0, 0.0, 0.0, 9.999999747378752e-05], [9.999999747378752e-05, 9.999999747378752e-05, 0.0, 0.0, 0.031599998474121094, 0.02930000051856041, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.021700000390410423, 0.1080000028014183, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.031599998474121094, 0.005900000222027302, 0.010900000110268593, 0.0024999999441206455, 0.02199999988079071, 0.0, 0.010900000110268593, 0.0008999999845400453, 0.0, 0.0, 0.0, 0.006500000134110451, 0.0, 0.0010000000474974513, 0.0, 0.0, 0.02979999966919422, 0.029999999329447746, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.07199999690055847, 0.06129999831318855, 0.029100000858306885, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.04989999905228615, 0.010700000450015068, 0.0, 0.0, 0.0, 9.999999747378752e-05, 0.0, 0.0, 0.0, 0.0, 9.999999747378752e-05], [0.0, 0.0, 0.0, 0.0, 0.0284000001847744, 0.027499999850988388, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.011599999852478504, 0.09790000319480896, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.03400000184774399, 0.007499999832361937, 0.0071000000461936, 0.024399999529123306, 0.006500000134110451, 0.0, 0.010900000110268593, 0.00019999999494757503, 0.0, 0.0, 0.0, 0.008899999782443047, 0.0, 0.005900000222027302, 0.0, 0.0, 0.034299999475479126, 0.035100001841783524, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0843999981880188, 0.06889999657869339, 0.030400000512599945, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.024900000542402267, 0.0010999999940395355, 0.0, 0.0, 0.0, 9.999999747378752e-05, 0.0, 0.0, 0.0, 0.0, 9.999999747378752e-05], [0.0, 0.0, 0.0, 0.0, 0.03280000016093254, 0.032999999821186066, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0272000003606081, 0.11349999904632568, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.03359999880194664, 0.005900000222027302, 0.00570000009611249, 0.01850000023841858, 0.03830000013113022, 0.0, 0.010900000110268593, 0.001500000013038516, 0.0, 0.0, 0.0, 0.006300000008195639, 0.0, 0.0010000000474974513, 0.0, 0.0, 0.033399999141693115, 0.033399999141693115, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.08179999887943268, 0.06849999725818634, 0.029100000858306885, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.032999999821186066, 0.00019999999494757503, 0.0, 0.0, 0.0, 9.999999747378752e-05, 0.0, 0.0, 0.0, 0.0, 9.999999747378752e-05], [0.0, 0.0, 0.0, 0.0, 0.03099999949336052, 0.028200000524520874, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.024800000712275505, 0.11100000143051147, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.03350000083446503, 0.00839999970048666, 0.010099999606609344, 0.019300000742077827, 0.02419999986886978, 0.0, 0.010900000110268593, 0.0015999999595806003, 0.0, 0.0, 0.0, 0.010300000198185444, 0.0, 0.003800000064074993, 0.0, 0.0, 0.03739999979734421, 0.0357000008225441, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.08320000022649765, 0.06960000097751617, 0.031300000846385956, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.027400000020861626, 0.008700000122189522, 0.0, 0.0, 0.0, 9.999999747378752e-05, 0.0, 0.0, 0.0, 0.0, 9.999999747378752e-05]]}], "stats": {"volume": {"cos": 0.999, "r50": 0.74, "r5": 0.36, "r95": 2.3, "clipped_pct": 0.07}, "jitter": {"cos": 0.994, "r50": 1.0, "r5": 0.97, "r95": 1.03, "clipped_pct": 0.076}, "volume+jitter": {"cos": 0.993, "r50": 0.74, "r5": 0.36, "r95": 2.25, "clipped_pct": 0.07}}};
+const AU = D.au_names;
+const NEUTRAL = 4;
+
+const PLAIN = [
+  ["LipCornerPuller", "Smile"], ["CheekRaiser", "Cheek raise"], ["LipCornerDepressor", "Lip corners down"],
+  ["BrowLowerer", "Brow down"], ["InnerBrowRaiser", "Inner brow up"], ["OuterBrowRaiser", "Outer brow up"],
+  ["LidTightener", "Eyelid tight"], ["UpperLidRaiser", "Eye wide"], ["EyesClosed", "Eye closed"],
+  ["NoseWrinkler", "Nose wrinkle"], ["UpperLipRaiser", "Upper lip up"], ["LowerLipDepressor", "Lower lip down"],
+  ["JawDrop", "Jaw open"], ["ChinRaiser", "Chin up"], ["LipPucker", "Lips pushed out"], ["LipStretcher", "Lips stretched"],
+  ["LipPressor", "Lips pressed"], ["LipTightener", "Lips tight"], ["LipSuck", "Lips sucked in"], ["LipFunneler", "Lips funnel"],
+  ["Dimpler", "Dimple"], ["CheekPuff", "Cheek puff"], ["EyesLook", "Gaze"], ["LipsToward", "Lips toward"],
+  ["Mouth", "Mouth side"], ["JawSideways", "Jaw side"], ["JawThrust", "Jaw forward"], ["CheekSuck", "Cheek suck"],
+];
+function plain(j) {
+  if (j >= 63) return `Tongue ${j - 62}`;
+  const name = AU[j];
+  const hit = PLAIN.find(([p]) => name.startsWith(p));
+  if (!hit) return name;
+  const rest = name.slice(hit[0].length);
+  const side = rest.endsWith("L") || rest.startsWith("L") ? " L" : rest.endsWith("R") || rest.startsWith("R") ? " R" : "";
+  return hit[1] + (hit[0] === "EyesLook" ? " " + rest : side);
+}
+
+const faceSize = w => w.reduce((s, fr) => s + fr.slice(0, 63).reduce((a, b) => a + b, 0), 0) / w.length;
+const clip = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
+const cosine = (a, b) => {
+  let d = 0, na = 0, nb = 0;
+  a.forEach((fr, f) => fr.forEach((v, j) => { d += v * b[f][j]; na += v * v; nb += b[f][j] * b[f][j]; }));
+  return d / (Math.sqrt(na) * Math.sqrt(nb) + 1e-12);
+};
+
+function volumeRange(w, cls) {
+  if (cls === NEUTRAL) return [0.5, 1.5];
+  const s = Math.max(faceSize(w), 1e-6);
+  return [clip(0.8 / s, 1 / 3, 3), clip(5.5 / s, 1 / 3, 3)];
+}
+
+function makeCopy(ex) {
+  const w = ex.window;
+  const [lo, hi] = volumeRange(w, ex.cls);
+  const g = Math.exp(Math.log(lo) + Math.random() * (Math.log(hi) - Math.log(lo)));
+  const afterVol = w.map(fr => fr.map(v => v * g));
+  const jit = w.map(fr => fr.map(() => 0.8 + 0.4 * Math.random()));
+  let clipped = 0;
+  let fin = afterVol.map((fr, f) => fr.map((v, j) => {
+    const x = v * jit[f][j];
+    if (x > 1) clipped++;
+    return clip(x, 0, 1);
+  }));
+  let neutralScale = 1;
+  if (ex.cls === NEUTRAL) {
+    const peak = Math.max(...fin.flat());
+    if (peak > 0.25) { neutralScale = 0.25 / peak; fin = fin.map(fr => fr.map(v => v * neutralScale)); }
+  }
+  return { g, lo, hi, afterVol, jit, fin, clipped, neutralScale };
+}
+
+const heat = (v, max, token) => `color-mix(in srgb, var(${token}) ${Math.round(clip(v / max, 0, 1) * 100)}%, var(--track))`;
+const ink = (v, max) => v / max > 0.55 ? "var(--surface)" : "var(--fg)";
+
+function grid(id, w, cols, max, token) {
+  let h = "<tr><th></th>" + cols.map(j => `<th class="col"><div>${plain(j)}</div></th>`).join("") + "</tr>";
+  w.forEach((fr, f) => {
+    h += `<tr><th class="row">f${f + 1}</th>` + cols.map(j => {
+      const v = fr[j];
+      return `<td style="background:${heat(v, max, token)};color:${ink(v, max)}" title="${AU[j] || "tongue"}: ${v.toFixed(3)}">${v < 0.005 ? "" : v.toFixed(2)}</td>`;
+    }).join("") + "</tr>";
+  });
+  document.getElementById(id).innerHTML = h;
+}
+
+function jitGrid(id, m, cols) {
+  let h = "<tr><th></th>" + cols.map(j => `<th class="col"><div>${plain(j)}</div></th>`).join("") + "</tr>";
+  m.forEach((fr, f) => {
+    h += `<tr><th class="row">f${f + 1}</th>` + cols.map(j => {
+      const v = fr[j], t = Math.abs(v - 1) / 0.2;
+      const color = v < 1 ? `color-mix(in srgb, var(--down) ${Math.round(t * 75)}%, var(--track))`
+                          : `color-mix(in srgb, var(--vol) ${Math.round(t * 75)}%, var(--track))`;
+      return `<td style="background:${color};color:var(--fg)">×${v.toFixed(2)}</td>`;
+    }).join("") + "</tr>";
+  });
+  document.getElementById(id).innerHTML = h;
+}
+
+let current = 0;
+const pick = document.getElementById("pick");
+pick.innerHTML = D.examples.map((ex, i) => `<button type="button" id="ex-${i}" data-i="${i}" aria-pressed="false">${ex.label}</button>`).join("");
+pick.addEventListener("click", e => { const b = e.target.closest("button"); if (b) { current = +b.dataset.i; render(); } });
+document.getElementById("again").addEventListener("click", render);
+
+function render() {
+  pick.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(+b.dataset.i === current)));
+  const ex = D.examples[current];
+  const w = ex.window;
+  const means = w[0].map((_, j) => w.reduce((s, fr) => s + fr[j], 0) / w.length);
+  const cols = means.map((m, j) => [m, j]).filter(([, j]) => j < 63).sort((a, b) => b[0] - a[0]).slice(0, 8).map(x => x[1]);
+
+  const c = makeCopy(ex);
+  const max = Math.max(...[w, c.afterVol, c.fin].flatMap(m => m.flatMap(fr => cols.map(j => fr[j]))), 0.05);
+
+  const s0 = faceSize(w), s1 = faceSize(c.fin);
+  document.getElementById("origWhat").textContent = `Face size ${s0.toFixed(2)}.`;
+  document.getElementById("volWhat").innerHTML =
+    `<span class="big-mult">×${c.g.toFixed(2)}</span> drawn from ×${c.lo.toFixed(2)} … ×${c.hi.toFixed(2)}` +
+    (ex.cls === NEUTRAL ? " (Neutral range)" : "");
+  document.getElementById("finWhat").textContent = `Face size ${s1.toFixed(2)} (${s1 > s0 ? "louder" : "quieter"}).`;
+
+  grid("g0", w, cols, max, "--fg");
+  grid("g1", c.afterVol, cols, max, "--vol");
+  jitGrid("g2", c.jit, cols);
+  grid("g3", c.fin, cols, max, "--copy");
+
+  const facts = [
+    ["Volume number", `×${c.g.toFixed(2)}`],
+    ["Face size", `${s0.toFixed(2)} → ${s1.toFixed(2)}`],
+    ["Shape similarity to the original", cosine(w, c.fin).toFixed(3)],
+    ["Values clipped at 1", `${c.clipped} of 350`],
+    ["Neutral check", ex.cls === NEUTRAL ? (c.neutralScale < 1 ? `scaled ×${c.neutralScale.toFixed(2)}` : "not needed (max ≤ 0.25)") : "not a Neutral window"],
+  ];
+  document.getElementById("facts").innerHTML = facts.map(([k, v]) => `<div class="fact"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+}
+render();
+
+(function () {
+  const S = D.stats;
+  const rows = [["Volume", S.volume], ["Jitter", S.jitter], ["Volume + jitter", S["volume+jitter"]]];
+  document.getElementById("stats").innerHTML =
+    "<tr><th>Method</th><th>Shape similarity</th><th>Size ratio, median</th><th>Size ratio, 5% … 95%</th></tr>" +
+    rows.map(([n, s]) => `<tr><td>${n}</td><td class="num">${s.cos.toFixed(3)}</td><td class="num">×${s.r50.toFixed(2)}</td><td class="num">×${s.r5.toFixed(2)} … ×${s.r95.toFixed(2)}</td></tr>`).join("");
+})();
+</script>
+
+</body></html>

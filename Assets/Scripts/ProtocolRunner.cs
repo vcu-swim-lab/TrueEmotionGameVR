@@ -660,8 +660,9 @@ public class ProtocolRunner : MonoBehaviour
                 rawVotes.Add(new TickVote(i, (int)prediction.Value.Emotion));
             }
 
-            // Test block: show what the system sees, every tick. The calibrated emotion when
-            // calibration is ready, the model's own otherwise.
+            // Test block: show the final result every tick -- the calibrated emotion when
+            // calibration is ready (model scores and face movements against this person's own),
+            // the model's own prediction otherwise. The same value as the results file's `emotion`.
             if (trial.Role == BlockRole.Evaluation)
             {
                 string seen = "—";
@@ -674,7 +675,7 @@ public class ProtocolRunner : MonoBehaviour
                         : shown.ToString();
                 }
 
-                Show($"{HoldScreen(trial.Emotion)}\n\nI see: {seen}");
+                Show($"{HoldScreen(trial.Emotion)}\n\nResult: {seen}");
             }
 
             // Logged whether or not tracking held, so a dropout is visible in the file

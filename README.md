@@ -63,11 +63,15 @@ prediction per second) → "Recording complete" → relax.
 1. **Part 1: Calibration** — 7 trials, one per emotion, shown as "Calibration 3 of 7". The
    system learns how this person makes each expression.
 2. **Part 2** — 14 trials (each emotion twice, shuffled), shown as "Trial 5 of 14". During each
-   hold the screen shows **"I see: 😀 Happiness"**, updated every second, using the calibrated
-   prediction.
+   hold the screen shows **"Result: 😀 Happiness"**, updated every second. This is the final
+   result: the calibrated emotion, which compares both the model's scores and the face movements
+   with this person's own calibration.
 
 **Use Calibration off — one part:** the calibration part is skipped. The session is the 14
-trials, and "I see: …" shows the model's own prediction.
+trials, and "Result: …" shows the model's own prediction.
+
+"Result" is always the same value as the `emotion` column of the results file; the
+`model_emotion` column holds the model's own prediction.
 
 If face tracking is lost during calibration, the session continues without calibration and the
 logs say why. The protocol version is `session-local-v2` (the participant sees the predicted

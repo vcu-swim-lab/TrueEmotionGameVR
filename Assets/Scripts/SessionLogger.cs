@@ -611,11 +611,11 @@ public sealed class SessionLogger : IDisposable
             new("personal_centroid_required_ticks",
                 PersonalCentroidBuilder.RequiredTicksPerCentroid.ToString(CultureInfo.InvariantCulture)),
             new("runtime_calibration_version", MovementCalibrator.ImplementationVersion),
-            // Console logging, not an on-headset overlay. The participant is shown nothing in
-            // any mode, and this field must not be read as saying otherwise.
+            // Console logging, separate from what the participant sees on the headset.
             new("debug_logging_enabled", calibration.DebugLoggingEnabled ? "true" : "false"),
             new("participant_feedback_shown",
-                "none, in every mode: no prediction, no correctness, no score"),
+                "test block: the predicted emotion every second (calibrated when calibration "
+                + "is ready); calibration block: none; never a score"),
             new("trial_majority_tie_rule",
                 "most ticks -> the trial's final tracked tick -> first tied class in class order"),
         };

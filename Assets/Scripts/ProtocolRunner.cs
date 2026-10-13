@@ -41,7 +41,11 @@ public class ProtocolRunner : MonoBehaviour
     // meaning. Sessions recorded under different protocol versions are never pooled, so
     // redefining a version in place would break that guarantee for anything already
     // stamped with it.
-    public const string ProtocolVersion = "session-local-v1";
+    //
+    // `session-local-v2` (2026-10-13): the calibration block runs only when calibration is on,
+    // each part is named on screen, and the participant sees the predicted emotion every
+    // second during the test block. Not pooled with v1, which showed nothing.
+    public const string ProtocolVersion = "session-local-v2";
 
     public const int CalibrationPasses = 1;   // K block: 7 trials
     public const int EvaluationPasses = 2;    // D block: 14 trials
@@ -121,24 +125,16 @@ public class ProtocolRunner : MonoBehaviour
             ? "Stay relaxed"
             : $"{EmotionToEmoji[emotion]}\n\nHold it";
 
-    // A position marker on the prompt screen: "Trial 3 of 21". Twenty-one trials is long
-    // enough that "how much is left" is a real question, and leaving it unanswerable is its
-    // own distraction.
-    //
-    // It counts straight through the session and deliberately does NOT reset at the block
-    // boundary, nor name the block. A counter that restarted at trial 8 would announce
-    // exactly where calibration ends and evaluation begins, and a participant who knows
-    // which block they are in produces the K-versus-D difference that
-    // `Analysis/block_effect.py` exists to detect -- at which point that script can no
-    // longer separate "the model read the same face differently" from "the participant
-    // performed the second block differently". The word "evaluation" would also contradict
-    // the intro's promise that nothing here is scored.
-    //
-    // Shown on the prompt only, never during the hold. The hold is the part that is
-    // recorded, and putting fresh text in front of someone while their face is the
-    // measurement records them reading rather than expressing.
-    private string TrialCounter(PlannedTrial trial) =>
-        $"Trial {trial.TrialId + 1} of {Plan.Count}";
+    // A position marker on the prompt screen, naming the part: "Calibration 3 of 7" in the
+    // calibration block, "Trial 5 of 14" in the test block. Shown on the prompt only, never
+    // during the hold.
+    private string TrialCounter(PlannedTrial trial)
+    {
+        var block = Plan.Where(p => p.Role == trial.Role).ToList();
+        int position = block.FindIndex(p => p.TrialId == trial.TrialId) + 1;
+        string name = trial.Role == BlockRole.Calibration ? "Calibration" : "Trial";
+        return $"{name} {position} of {block.Count}";
+    }
 
     // One prompt, resolved before the session starts so the whole schedule is fixed and
     // recordable in advance rather than decided trial by trial.
@@ -211,7 +207,8 @@ public class ProtocolRunner : MonoBehaviour
             ? randomizationSeed
             : Environment.TickCount & 0x7FFFFFFF;
 
-        Plan = BuildPlan(seedUsed);
+        // The library's "Use Calibration" checkbox: off, the calibration block is skipped.
+        Plan = BuildPlan(seedUsed, includeCalibration: predictor.UseCalibration);
 
         RunSession();
     }
@@ -219,7 +216,9 @@ public class ProtocolRunner : MonoBehaviour
     // The calibration block, then the evaluation block, each a sequence of shuffled passes
     // over all seven states. Resolved up front so the whole schedule is fixed and recordable
     // in advance rather than decided trial by trial.
-    public static List<PlannedTrial> BuildPlan(int seed)
+    // `includeCalibration`: false leaves out the calibration block, so a session without
+    // calibration is the test block only.
+    public static List<PlannedTrial> BuildPlan(int seed, bool includeCalibration = true)
     {
         var random = new Random(seed);
         var plan = new List<PlannedTrial>(
@@ -263,7 +262,10 @@ public class ProtocolRunner : MonoBehaviour
             }
         }
 
-        AddPasses(BlockRole.Calibration, CalibrationPasses);
+        if (includeCalibration)
+        {
+            AddPasses(BlockRole.Calibration, CalibrationPasses);
+        }
         AddPasses(BlockRole.Evaluation, EvaluationPasses);
 
         return plan;
@@ -442,8 +444,22 @@ public class ProtocolRunner : MonoBehaviour
              "You will not be scored.");
         await Awaitable.WaitForSecondsAsync(Scaled(6f));
 
+        BlockRole? currentPart = null;
         foreach (var trial in Plan)
         {
+            // Name each part when it starts.
+            if (trial.Role != currentPart)
+            {
+                currentPart = trial.Role;
+                Show(trial.Role == BlockRole.Calibration
+                    ? "Part 1: Calibration\n\nFirst we learn how you make each expression."
+                    : (calibrationConfig.MovementEnabled
+                        ? "Part 2\n\nNow make each expression again."
+                        : "Make each expression as it is shown.") +
+                      "\nYou will see what the system thinks.");
+                await Awaitable.WaitForSecondsAsync(Scaled(4f));
+            }
+
             // The profile is sealed on the way into the first evaluation trial, which is the
             // moment the calibration block is complete. Keyed on the role rather than on a
             // trial number so it stays correct if the block sizes ever change.
@@ -642,6 +658,23 @@ public class ProtocolRunner : MonoBehaviour
             if (prediction.HasValue && PersonalCentroidBuilder.IsScoredTick(i))
             {
                 rawVotes.Add(new TickVote(i, (int)prediction.Value.Emotion));
+            }
+
+            // Test block: show what the system sees, every tick. The calibrated emotion when
+            // calibration is ready, the model's own otherwise.
+            if (trial.Role == BlockRole.Evaluation)
+            {
+                string seen = "—";
+                if (prediction.HasValue)
+                {
+                    var shown = calibrated.HasValue ? (Emotion)calibrated.Value.ClassIndex
+                                                    : prediction.Value.Emotion;
+                    seen = EmotionToEmoji.TryGetValue(shown, out string emoji)
+                        ? $"{emoji} {shown}"
+                        : shown.ToString();
+                }
+
+                Show($"{HoldScreen(trial.Emotion)}\n\nI see: {seen}");
             }
 
             // Logged whether or not tracking held, so a dropout is visible in the file

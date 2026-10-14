@@ -122,3 +122,7 @@ __pycache__/
 
 # Results copied from the headset (VR Emotion > Get Results From Headset): real people, never commit.
 /HeadsetResults/
+
+# A Jev Settings asset (Create > VR Emotion > Jev Settings) can hold a Typesafe API key: never commit.
+JevSettings*.asset
+JevSettings*.asset.meta

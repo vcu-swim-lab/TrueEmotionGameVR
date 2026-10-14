@@ -157,6 +157,9 @@ public class ProtocolRunner : MonoBehaviour
     }
 
     private NewFaceAuModel predictor;
+
+    // Jev's answer next to the local model's; see Assets/Scripts/Jev/README.md.
+    private JevScorer scorer;
     private SessionLogger sessionLogger;
     private int seedUsed;
 
@@ -196,6 +199,7 @@ public class ProtocolRunner : MonoBehaviour
         }
 
         predictor = GetComponent<NewFaceAuModel>();
+        scorer = JevScorer.GetOrAdd(gameObject);
 
         if (!CheckClassOrder())
         {
@@ -310,6 +314,7 @@ public class ProtocolRunner : MonoBehaviour
                 { "face_model_append_softmax", "false" },
                 { "face_model_softmax_reason", "graph already ends in Softmax; output is already a probability distribution" },
             };
+            SessionLogger.AddFaceBackendInfo(modelInfo, scorer);
 
             // Counted off the plan rather than from the constants, so these can never
             // disagree with the schedule that actually ran.
@@ -503,6 +508,7 @@ public class ProtocolRunner : MonoBehaviour
         if (calibrationConfig.MovementEnabled)
         {
             predictor.StartCalibration();
+            scorer.StartProtocolCalibration();
         }
 
         return true;
@@ -526,6 +532,11 @@ public class ProtocolRunner : MonoBehaviour
         // Raw sessions have nothing to build and nothing to invalidate.
         bool movement = calibrationConfig.MovementEnabled;
         bool valid = !movement || predictor.FinishCalibration();
+        if (movement)
+        {
+            scorer.FinishProtocolCalibration();
+        }
+
         string error = movement ? predictor.CalibrationError ?? string.Empty : string.Empty;
         bool built = movement && predictor.IsCalibrated;
 
@@ -626,6 +637,7 @@ public class ProtocolRunner : MonoBehaviour
         if (calibrating)
         {
             predictor.BeginCalibrationEmotion(trial.Emotion);
+            scorer.BeginProtocolEmotion(trial.Emotion);
         }
 
         for (int i = 0; i < ticks; ++i)
@@ -644,6 +656,7 @@ public class ProtocolRunner : MonoBehaviour
                 // By tick position, so tick 0 is dropped and a missed tick stays missed,
                 // exactly as the offline analysis fits the same recording.
                 predictor.AddCalibrationSample(i, prediction);
+                scorer.AddProtocolSample(i, prediction);
             }
             else if (trial.Role == BlockRole.Evaluation && PersonalCentroidBuilder.IsScoredTick(i)
                      && prediction.HasValue)
@@ -660,16 +673,27 @@ public class ProtocolRunner : MonoBehaviour
                 rawVotes.Add(new TickVote(i, (int)prediction.Value.Emotion));
             }
 
-            // Test block: show the final result every tick -- the calibrated emotion when
-            // calibration is ready (model scores and face movements against this person's own),
-            // the model's own prediction otherwise. The same value as the results file's `emotion`.
+            // Jev answers the evaluation block only. Calibration trials stay local, so they cost
+            // no API calls and the calibration is built from the local model's scores. The
+            // votes above stay local too; Jev's answers are in jev_predictions.csv.
+            float[] jevScores = null;
+            if (trial.Role == BlockRole.Evaluation && prediction.HasValue && scorer.Enabled)
+            {
+                jevScores = await scorer.Score(prediction.Value);
+                sessionLogger?.LogJev(trial.TrialId, trial.Emotion, i, jevScores, scorer.LastError, scorer.ProfileSent);
+            }
+
+            // Test block: show the final result every tick -- Jev's answer when it gave one,
+            // otherwise the calibrated emotion when calibration is ready (model scores and face
+            // movements against this person's own), the model's own prediction otherwise.
             if (trial.Role == BlockRole.Evaluation)
             {
                 string seen = "—";
                 if (prediction.HasValue)
                 {
-                    var shown = calibrated.HasValue ? (Emotion)calibrated.Value.ClassIndex
-                                                    : prediction.Value.Emotion;
+                    var shown = jevScores != null ? JevScorer.Decide(jevScores)
+                              : calibrated.HasValue ? (Emotion)calibrated.Value.ClassIndex
+                              : prediction.Value.Emotion;
                     seen = EmotionToEmoji.TryGetValue(shown, out string emoji)
                         ? $"{emoji} {shown}"
                         : shown.ToString();

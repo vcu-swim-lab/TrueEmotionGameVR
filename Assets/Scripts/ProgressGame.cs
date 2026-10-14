@@ -46,6 +46,9 @@ public class ProgressGame : MonoBehaviour
 
     private SessionLogger sessionLogger;
 
+    // Jev's answer next to the local model's; see Assets/Scripts/Jev/README.md.
+    private JevScorer scorer;
+
     // Monotonic across rounds, so restarting the game does not reuse trial ids.
     private int trialCounter;
 
@@ -55,6 +58,7 @@ public class ProgressGame : MonoBehaviour
         // debug = GameObject.Find("Debug").GetComponent<TextMeshProUGUI>();
 
         predictor = GetComponent<NewFaceAuModel>();
+        scorer = JevScorer.GetOrAdd(gameObject);
 
         StartSessionLogger();
 
@@ -100,6 +104,7 @@ public class ProgressGame : MonoBehaviour
                 { "logmel_model_append_softmax", "false" },
                 { "logmel_model_softmax_reason", "preprocessing transform, loaded with ModelLoader.Load directly" },
             };
+            SessionLogger.AddFaceBackendInfo(modelInfo, scorer);
 
             sessionLogger = new SessionLogger(
                 NewFaceAuModel.WindowFrames,
@@ -260,8 +265,23 @@ public class ProgressGame : MonoBehaviour
                 var predicted = predictor.CalibratedEmotion(value) ?? value.Emotion;
                 float confidence = value.Scores[(int)predicted];
 
+                // Jev's answer replaces it when Jev is on and answered. When it did not (no key,
+                // no network), the local prediction above stands and the round carries on.
+                var jevScores = await scorer.Score(value);
+                if (scorer.Enabled)
+                {
+                    sessionLogger?.LogJev(trialId, emotion, i, jevScores, scorer.LastError, scorer.ProfileSent);
+                }
+
+                if (jevScores != null)
+                {
+                    predicted = JevScorer.Decide(jevScores);
+                    confidence = jevScores[(int)predicted];
+                }
+
                 Debug.Log($"[game] round {trialId} {emotion} tick {i}: {predicted} " +
-                          $"{confidence:F2} (calibrated: {predictor.IsCalibrated})");
+                          $"{confidence:F2} (calibrated: {predictor.IsCalibrated}, " +
+                          $"jev: {(jevScores != null ? "yes" : scorer.Enabled ? "failed: " + scorer.LastError : "off")})");
 
                 // A point when the prediction is the prompted emotion.
                 if (predicted == emotion)
@@ -310,12 +330,19 @@ public class ProgressGame : MonoBehaviour
             if (OVRInput.GetDown(OVRInput.Button.Two))
             {
                 predictor.ClearCalibration();
+                scorer.ClearProfile();
                 return;
             }
 
             if (hasSaved && OVRInput.GetDown(OVRInput.Button.Three))
             {
-                text.text = predictor.LoadCalibration(playerId)
+                bool loaded = predictor.LoadCalibration(playerId);
+                if (loaded)
+                {
+                    scorer.LoadProfile(playerId);
+                }
+
+                text.text = loaded
                     ? "Saved calibration loaded."
                     : $"Could not load it; playing without calibration.\n{predictor.CalibrationError}";
                 await Awaitable.WaitForSecondsAsync(2f);
@@ -329,6 +356,7 @@ public class ProgressGame : MonoBehaviour
     private async Awaitable RunCalibration()
     {
         predictor.StartCalibration();
+        scorer.ClearProfile();
 
         foreach (Emotion emotion in System.Enum.GetValues(typeof(Emotion)))
         {
@@ -355,7 +383,11 @@ public class ProgressGame : MonoBehaviour
 
         if (predictor.FinishCalibration())
         {
-            predictor.SaveCalibration(playerId);
+            if (predictor.SaveCalibration(playerId))
+            {
+                scorer.LoadProfile(playerId);
+            }
+
             text.text = "Calibration done.";
         }
         else

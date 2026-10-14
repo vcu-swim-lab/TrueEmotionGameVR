@@ -72,6 +72,9 @@ public sealed class SessionLogger : IDisposable
 
     private StreamWriter writer;
     private StreamWriter trialWriter;
+
+    // Created on the first Jev answer, so a session without Jev has exactly the files it had before.
+    private StreamWriter jevWriter;
     private readonly StringBuilder row = new();
 
     public string SessionDirectory => sessionDirectory;
@@ -239,6 +242,84 @@ public sealed class SessionLogger : IDisposable
                               FacePrediction? prediction)
         => LogRow(trialId, string.Empty, string.Empty,
                   promptedEmotion, predictionIndex, prediction, null);
+
+    // What a session's metadata says about which model produced the predictions. Both game
+    // scripts call this instead of each spelling it out, and it never writes the API key.
+    public static void AddFaceBackendInfo(IDictionary<string, string> modelInfo, JevScorer scorer)
+    {
+        bool jev = scorer != null && scorer.Enabled;
+
+        modelInfo["face_backend"] = jev ? "LocalModel+Jev" : "LocalModel";
+        if (jev)
+        {
+            modelInfo["jev_model"] = scorer.Model;
+            modelInfo["jev_base_url"] = scorer.BaseUrl;
+            modelInfo["jev_note"] = "predictions.csv holds the local model's scores; Jev's answers are in jev_predictions.csv, joined on trial_id and prediction_index";
+        }
+    }
+
+    // Jev's answer for one tick, next to the local prediction in predictions.csv (same
+    // `trial_id` and `prediction_index`). `scores` is null when the call failed, with the
+    // reason in `error`; that row is kept so a Jev outage is visible rather than missing.
+    // `profileSent` says whether the request carried the player's own calibration.
+    public void LogJev(int trialId, Emotion promptedEmotion, int predictionIndex,
+                       float[] scores, string error, bool profileSent)
+    {
+        try
+        {
+            if (jevWriter == null)
+            {
+                jevWriter = new StreamWriter(Path.Combine(sessionDirectory, "jev_predictions.csv"),
+                                             append: false, new UTF8Encoding(false))
+                {
+                    AutoFlush = true,
+                };
+
+                var header = new StringBuilder(
+                    "timestamp_utc,session_id,trial_id,prompted_emotion,prediction_index,status,jev_predicted_emotion");
+                foreach (var emotion in ClassOrder)
+                {
+                    header.Append(",jev_score_").Append(emotion);
+                }
+
+                header.Append(",profile_sent,error");
+                jevWriter.WriteLine(header.ToString());
+            }
+
+            var line = new StringBuilder();
+            line.Append(DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture)).Append('Z');
+            line.Append(',').Append(Escape(sessionId));
+            line.Append(',').Append(trialId.ToString(CultureInfo.InvariantCulture));
+            line.Append(',').Append(Escape(promptedEmotion.ToString()));
+            line.Append(',').Append(predictionIndex.ToString(CultureInfo.InvariantCulture));
+
+            if (scores == null)
+            {
+                line.Append(",failed,");
+                for (int i = 0; i < ClassOrder.Length; ++i)
+                {
+                    line.Append(',');
+                }
+            }
+            else
+            {
+                line.Append(",ok,").Append(Escape(JevScorer.Decide(scores).ToString()));
+                for (int i = 0; i < ClassOrder.Length; ++i)
+                {
+                    line.Append(',').Append(Format(scores[i]));
+                }
+            }
+
+            line.Append(',').Append(profileSent ? "yes" : "no");
+            line.Append(',').Append(Escape(error));
+            jevWriter.WriteLine(line.ToString());
+        }
+        catch (Exception e)
+        {
+            // A logging failure must not stop the game or the session.
+            Debug.LogError($"SessionLogger: could not write jev_predictions.csv ({e.GetType().Name}: {e.Message})");
+        }
+    }
 
     private void LogRow(int trialId, string blockRole, string repeatIndex,
                         Emotion promptedEmotion, int predictionIndex,
@@ -693,6 +774,7 @@ public sealed class SessionLogger : IDisposable
     {
         // The trial file is closed even if the prediction file was already closed, so an
         // interrupted session does not leave one of the two open.
+        Close(ref jevWriter, "jev_predictions.csv");
         Close(ref trialWriter, "trials.csv");
         Close(ref writer, "predictions.csv");
     }

@@ -41,7 +41,7 @@ To switch, untick one and tick the other, then **Build and Run** again.
 
 | Setting | Where (Inspector) | Default | What it does |
 |---|---|---|---|
-| **Use Calibration** | `New Face Au Model` | Off | Adapts the predictions to each player (movement calibration). Off: the model's own answer is used everywhere |
+| **Use Calibration** | `New Face Au Model` | On (temporarily, while Jev is tested) | Adapts the predictions to each player (movement calibration). Off: the model's own answer is used everywhere |
 | **Save Results** | `New Face Au Model` | On | Saves every prediction to a results file on the headset (see *Results*) |
 | **Face Model** | `New Face Au Model` | the acted-data model | The emotion model; leave it as it is |
 | **Player Id** | `Progress Game` | `player1` | The name a player's calibration is saved under |
@@ -51,6 +51,31 @@ To switch, untick one and tick the other, then **Build and Run** again.
 
 The settings are saved in the scene, so **after changing one, Build and Run again** for the
 headset (in the Editor, press Play again). A running session never changes mode halfway.
+
+
+## 🌐 Jev (temporary, on by default while testing)
+
+Besides the local model, each prediction can be sent to [Typesafe's Jev model](https://docs.typesafe.ai),
+an online service. The local model still scores every tick and is what calibration and
+`predictions.csv` use; Jev's answer is what the game scores and what the study screen shows.
+
+- **It is on by default** (`Jev Scorer`, added to the Canvas when the game starts, `Use Jev` ticked).
+  To switch it off, add a `Jev Scorer` component to the Canvas and untick **Use Jev**, or set the
+  default in `Assets/Scripts/Jev/JevScorer.cs` to `false`. **Do this before collecting study data**:
+  the study protocol is written for the local model.
+- **Key:** set the `TYPESAFE_API_KEY` environment variable before opening Unity (Editor). For a
+  headset build, create **Assets > Create > VR Emotion > Jev Settings**, paste the key there and
+  assign it to the `Jev Scorer`. That asset is git-ignored; never commit it. A key inside a build can
+  be extracted, so for anything shared use a proxy (the asset's Base Url).
+- **No key or no network:** the game keeps running on the local model, and the console warns once.
+- **Privacy:** while Jev is on, the player's face-tracking numbers leave the device. Get consent.
+- **Logs:** `session_metadata.json` records `face_backend`; Jev's answers are in
+  `jev_predictions.csv` (join on `trial_id` and `prediction_index`). Only evaluation trials ask Jev
+  in the study, and the trial votes in `trials.csv` stay on the local model.
+- **Calibration:** with **Use Calibration** on and a finished (or loaded) calibration, each request also
+  carries that player's own movement signature for every emotion, as the library does, and
+  `jev_predictions.csv` says so in `profile_sent`. Without a calibration Jev judges from general
+  knowledge of expressions. The calibration itself is always built from the local model.
 
 
 ## 🧪 Study protocol (`Protocol Runner`)
@@ -125,7 +150,7 @@ committed: `HeadsetResults/`, `Logs/`, `Analysis/` (scripts and participant data
 
 | Folder | Contents |
 |---|---|
-| `Assets/Scripts/` | `ProtocolRunner` (study), `ProgressGame` (emotion game), `SessionLogger` (detailed logs), `Calibration/` (session settings and trial voting) |
+| `Assets/Scripts/` | `ProtocolRunner` (study), `ProgressGame` (emotion game), `SessionLogger` (detailed logs), `Calibration/` (session settings and trial voting), `Jev/` (temporary copy of the library's Jev client, plus `JevScorer`) |
 | `Assets/Tests/EditMode/` | Tests: calibration math, parity with the Python analysis, scene setup |
 | `Assets/Scenes/Main.unity` | The scene |
 | `Docs/` | Study protocol and reports |
@@ -135,7 +160,7 @@ committed: `HeadsetResults/`, `Logs/`, `Analysis/` (scripts and participant data
 ## ✅ Tests
 
 In Unity: **Window > General > Test Runner > EditMode > Run All**. The scene tests expect the
-committed scene to have **Use Calibration** off; untick it before committing the scene.
+committed scene to have **Use Calibration** on (temporary, while Jev is tested); change the scene and `SceneWiringTests` together when it goes back to off.
 
 
 ## 📝 License

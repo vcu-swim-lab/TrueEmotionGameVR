@@ -41,7 +41,7 @@ To switch, untick one and tick the other, then **Build and Run** again.
 
 | Setting | Where (Inspector) | Default | What it does |
 |---|---|---|---|
-| **Use Calibration** | `New Face Au Model` | On (temporarily, while Jev is tested) | Adapts the predictions to each player (movement calibration). Off: the model's own answer is used everywhere |
+| **Use Calibration** | `New Face Au Model` | Off | Adapts the predictions to each player (movement calibration). Off: the model's own answer is used everywhere |
 | **Save Results** | `New Face Au Model` | On | Saves every prediction to a results file on the headset (see *Results*) |
 | **Face Model** | `New Face Au Model` | the acted-data model | The emotion model; leave it as it is |
 | **Player Id** | `Progress Game` | `player1` | The name a player's calibration is saved under |
@@ -160,7 +160,7 @@ committed: `HeadsetResults/`, `Logs/`, `Analysis/` (scripts and participant data
 ## ✅ Tests
 
 In Unity: **Window > General > Test Runner > EditMode > Run All**. The scene tests expect the
-committed scene to have **Use Calibration** on (temporary, while Jev is tested); change the scene and `SceneWiringTests` together when it goes back to off.
+committed scene to have **Use Calibration** off; untick it before committing the scene.
 
 
 ## 📝 License

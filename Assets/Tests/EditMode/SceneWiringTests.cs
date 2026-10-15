@@ -164,18 +164,17 @@ namespace VcuSwimLab.Calibration.Tests
         }
 
         [Test]
-        public void The_scene_s_predictor_has_calibration_on_while_jev_is_tested()
+        public void The_scene_s_predictor_has_calibration_off()
         {
             var predictors = With(NewFaceAuModelGuid);
             Assert.AreEqual(1, predictors.Count, $"expected exactly one NewFaceAuModel in {ScenePath}");
 
-            // Temporarily on, so the calibration reaches Jev while it is being tested. Set it
-            // back to off (and this assertion to "0") with Jev's default; a build made from an
-            // off scene runs the model's own predictions until someone ticks "Use Calibration".
+            // Calibration is off by default: a build made from the committed scene runs the
+            // model's own predictions until someone ticks "Use Calibration".
             Assert.IsTrue(predictors[0].Fields.ContainsKey("useCalibration"),
                           "the scene does not store the Use Calibration checkbox");
-            Assert.AreEqual("1", predictors[0].Fields["useCalibration"],
-                            "Use Calibration is not ticked in the committed scene");
+            Assert.AreEqual("0", predictors[0].Fields["useCalibration"],
+                            "Use Calibration is ticked in the committed scene");
         }
 
         [Test]

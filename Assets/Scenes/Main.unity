@@ -869,7 +869,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   faceModel: {fileID: 5022602860645237092, guid: c8c2538830cca7d42b35813f72fa93bf, type: 3}
-  useCalibration: 1
+  useCalibration: 0
 --- !u!114 &964688081
 MonoBehaviour:
   m_ObjectHideFlags: 0

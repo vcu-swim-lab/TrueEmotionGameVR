@@ -180,7 +180,7 @@ public class ProgressGame : MonoBehaviour
                 // Countdown before showing emotion
                 for (int j = 3; j >= 0; --j)
                 {
-                    text.text = $"{j}";
+                    text.text = $"Next Emotion: {emotion}\n\n{j}";
                     await Awaitable.WaitForSecondsAsync(1f);
                 }
 

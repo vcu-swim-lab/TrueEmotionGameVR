@@ -55,27 +55,38 @@ headset (in the Editor, press Play again). A running session never changes mode 
 
 ## 🧪 Study protocol (`Protocol Runner`)
 
-Each trial: prompt (emoji and name) → 3-2-1 countdown → hold the face for 10 seconds (one
-prediction per second) → "Recording complete" → relax.
+The screen is placed in front of the player's gaze when the session starts, and again when the
+player recenters the headset.
+
+Each trial: prompt (emoji and name) → countdown with "Next Emotion: Happiness" above 3-2-1 →
+hold the face for 10 seconds (one prediction per second) → "Recording complete" → relax.
 
 **Use Calibration on — two parts:**
 
 1. **Part 1: Calibration** — 7 trials, one per emotion, shown as "Calibration 3 of 7". The
    system learns how this person makes each expression.
 2. **Part 2** — 14 trials (each emotion twice, shuffled), shown as "Trial 5 of 14". During each
-   hold the screen shows **"Result: 😀 Happiness"**, updated every second. This is the final
-   result: the calibrated emotion, which compares both the model's scores and the face movements
-   with this person's own calibration.
+   hold the screen shows **"Result: Happiness"** and **"Score: 6/8"**, updated every second.
+   Result is the final result: the calibrated emotion, which compares both the model's scores and
+   the face movements with this person's own calibration.
 
 **Use Calibration off — one part:** the calibration part is skipped. The session is the 14
 trials, and "Result: …" shows the model's own prediction.
+
+**Score:** seconds whose result was the prompted emotion, out of the seconds scored so far in
+that trial (seconds 1–9; the first second is not scored). A second without face tracking
+counts as a miss.
+
+**End screen:** "Session complete", then a table of the test part per emotion: correct seconds,
+scored seconds and percentage.
 
 "Result" is always the same value as the `emotion` column of the results file; the
 `model_emotion` column holds the model's own prediction.
 
 If face tracking is lost during calibration, the session continues without calibration and the
-logs say why. The protocol version is `session-local-v2` (the participant sees the predicted
-emotion); sessions from `session-local-v1`, which showed nothing, are not pooled with it.
+logs say why. The protocol version is `session-local-v3`: the participant sees the predicted
+emotion and the score. Sessions from `session-local-v1` (nothing shown) and `session-local-v2`
+(prediction, no score) are not pooled with it.
 
 
 ## 😀 Emotion game (`Progress Game`)
@@ -84,7 +95,8 @@ emotion); sessions from `session-local-v1`, which showed nothing, are not pooled
    - **A** — calibrate now (each of the 7 faces, about 90 seconds; saved for this Player Id),
    - **B** — skip,
    - **X** — use the saved calibration (shown only if one exists).
-2. **Game:** six emotions in random order. For each: 3-2-1, then the emoji; the player acts it for
+2. **Game:** six emotions in random order. For each: "Next Emotion: Happiness" with a 3-2-1
+   countdown, then the emoji; the player acts it for
    10 seconds. A point for every second the predicted emotion matches, so a score out of 10.
 3. **End screen:** the score per emotion and a summary of what the headset saw (share of each
    emotion and average confidence). Press any controller button to play again.

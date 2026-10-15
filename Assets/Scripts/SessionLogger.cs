@@ -615,7 +615,8 @@ public sealed class SessionLogger : IDisposable
             new("debug_logging_enabled", calibration.DebugLoggingEnabled ? "true" : "false"),
             new("participant_feedback_shown",
                 "test block: the predicted emotion every second (calibrated when calibration "
-                + "is ready); calibration block: none; never a score"),
+                + "is ready) and a running score (correct seconds out of scored seconds); "
+                + "session end: a per-emotion table of the test block; calibration block: none"),
             new("trial_majority_tie_rule",
                 "most ticks -> the trial's final tracked tick -> first tied class in class order"),
         };

@@ -45,6 +45,11 @@ public class ProtocolRunner : MonoBehaviour
     // `session-local-v2` (2026-10-13): the calibration block runs only when calibration is on,
     // each part is named on screen, and the participant sees the predicted emotion every
     // second during the test block. Not pooled with v1, which showed nothing.
+    //
+    // 2026-10-16: the backend can now be SparseVR or Jev, with calibration on or off (four
+    // conditions, chosen in ConditionSetup). The protocol itself is unchanged, so the version
+    // is too; every recording carries `condition`, `face_backend` and `backend_id` in its
+    // metadata, and a pooled analysis must filter on them rather than assume SparseVR.
     public const string ProtocolVersion = "session-local-v2";
 
     public const int CalibrationPasses = 1;   // K block: 7 trials
@@ -71,8 +76,8 @@ public class ProtocolRunner : MonoBehaviour
     [SerializeField] private bool fastRehearsal = false;
 
     [Header("Calibration")]
-    [Tooltip("Whether the session calibrates is the \"Use Calibration\" checkbox on the New Face " +
-             "Au Model component (VREmotionDetection library). This one only writes each " +
+    [Tooltip("Whether the session calibrates is set by the condition enabled in " +
+             "ConditionSetup.Configure (2 and 4 calibrate, 1 and 3 do not). This one only writes each " +
              "evaluation tick's calibrated decision to the Unity console, readable over " +
              "`adb logcat`. Development builds only. Nothing is ever shown to the participant.")]
     [SerializeField] private bool calibrationDebugLogging = false;
@@ -157,9 +162,6 @@ public class ProtocolRunner : MonoBehaviour
     }
 
     private NewFaceAuModel predictor;
-
-    // Jev's answer next to the local model's; see Assets/Scripts/Jev/README.md.
-    private JevScorer scorer;
     private SessionLogger sessionLogger;
     private int seedUsed;
 
@@ -199,7 +201,11 @@ public class ProtocolRunner : MonoBehaviour
         }
 
         predictor = GetComponent<NewFaceAuModel>();
-        scorer = JevScorer.GetOrAdd(gameObject);
+
+        // Which of the four conditions this build runs (backend and calibration) is chosen in
+        // ConditionSetup.Configure, before the plan below is built: whether the session has a
+        // calibration block follows the predictor's "Use Calibration", which the condition sets.
+        ConditionSetup.Configure(predictor);
 
         if (!CheckClassOrder())
         {
@@ -211,7 +217,7 @@ public class ProtocolRunner : MonoBehaviour
             ? randomizationSeed
             : Environment.TickCount & 0x7FFFFFFF;
 
-        // The library's "Use Calibration" checkbox: off, the calibration block is skipped.
+        // Conditions 2 and 4 (calibration on) have the calibration block; 1 and 3 skip it.
         Plan = BuildPlan(seedUsed, includeCalibration: predictor.UseCalibration);
 
         RunSession();
@@ -314,7 +320,7 @@ public class ProtocolRunner : MonoBehaviour
                 { "face_model_append_softmax", "false" },
                 { "face_model_softmax_reason", "graph already ends in Softmax; output is already a probability distribution" },
             };
-            SessionLogger.AddFaceBackendInfo(modelInfo, scorer);
+            SessionLogger.AddFaceBackendInfo(modelInfo, predictor);
 
             // Counted off the plan rather than from the constants, so these can never
             // disagree with the schedule that actually ran.
@@ -412,7 +418,7 @@ public class ProtocolRunner : MonoBehaviour
 
         // Read once, here, and never again. Everything downstream holds this object rather
         // than the component, so a checkbox toggled mid-session cannot reach the session.
-        // The library's "Use Calibration" checkbox decides whether this session calibrates.
+        // Whether this session calibrates was set by ConditionSetup.Configure (conditions 2 and 4).
         bool debug = calibrationDebugLogging && Debug.isDebugBuild;
         if (calibrationDebugLogging && !debug)
         {
@@ -423,7 +429,20 @@ public class ProtocolRunner : MonoBehaviour
 
         calibrationConfig = CalibrationSessionConfig.Lock(predictor.UseCalibration, debug);
 
-        Debug.Log($"{nameof(ProtocolRunner)}: calibration {calibrationConfig}");
+        Debug.Log($"{nameof(ProtocolRunner)}: {ConditionSetup.Label(predictor)}, " +
+                  $"calibration {calibrationConfig}");
+
+        // Can the chosen condition predict at all (Jev: key and connection)? Found out here, on
+        // the operator's screen, before a participant sits through a session of failed ticks.
+        // Nothing is shown to a participant yet and no session file exists.
+        Show($"{ConditionSetup.Label(predictor)}\n\n" +
+             (ConditionSetup.UsesJev(predictor) ? "Checking the Jev connection..." : "Starting..."));
+        var (ready, readyMessage) = await ConditionSetup.CheckReadyAsync(predictor);
+        if (!ready)
+        {
+            Abort(readyMessage, showReason: true);
+            return;
+        }
 
         if (!PrepareCalibration())
         {
@@ -507,8 +526,9 @@ public class ProtocolRunner : MonoBehaviour
 
         if (calibrationConfig.MovementEnabled)
         {
+            // The predictor collects the calibration from the ACTIVE backend: SparseVR's scores
+            // in condition 2, Jev's in condition 4 (one request per tick).
             predictor.StartCalibration();
-            scorer.StartProtocolCalibration();
         }
 
         return true;
@@ -532,10 +552,6 @@ public class ProtocolRunner : MonoBehaviour
         // Raw sessions have nothing to build and nothing to invalidate.
         bool movement = calibrationConfig.MovementEnabled;
         bool valid = !movement || predictor.FinishCalibration();
-        if (movement)
-        {
-            scorer.FinishProtocolCalibration();
-        }
 
         string error = movement ? predictor.CalibrationError ?? string.Empty : string.Empty;
         bool built = movement && predictor.IsCalibrated;
@@ -572,10 +588,16 @@ public class ProtocolRunner : MonoBehaviour
         }
     }
 
-    private void Abort(string reason)
+    // `showReason` puts the reason on the headset screen as well as in the log. Used for the
+    // condition check (a rejected Jev key, no connection): that happens before the participant
+    // has been given anything to do, and the operator wearing or watching the headset needs to
+    // see it without opening `adb logcat`.
+    private void Abort(string reason, bool showReason = false)
     {
         Debug.LogError($"{nameof(ProtocolRunner)}: {reason}");
-        Show("Cannot start.\n\nPlease tell the researcher.");
+        Show(showReason
+            ? $"Cannot start.\n\n{reason}\n\nPlease tell the researcher."
+            : "Cannot start.\n\nPlease tell the researcher.");
         enabled = false;
     }
 
@@ -637,7 +659,6 @@ public class ProtocolRunner : MonoBehaviour
         if (calibrating)
         {
             predictor.BeginCalibrationEmotion(trial.Emotion);
-            scorer.BeginProtocolEmotion(trial.Emotion);
         }
 
         for (int i = 0; i < ticks; ++i)
@@ -646,8 +667,11 @@ public class ProtocolRunner : MonoBehaviour
 
             // Calibration-block ticks stay out of the predictor's results file, as calibration
             // samples do everywhere; the detailed session log below still records every tick.
-            var prediction = await predictor.PredictDetailed(
+            // TryPredict rather than PredictDetailed: it also says why a tick has no prediction
+            // (no face tracking, or the backend -- Jev -- failed), and that goes in the log.
+            var outcome = await predictor.TryPredict(
                 saveResult: trial.Role != BlockRole.Calibration);
+            FacePrediction? prediction = outcome.PredictionOrNull;
 
             NearestCentroid? calibrated = null;
 
@@ -656,7 +680,6 @@ public class ProtocolRunner : MonoBehaviour
                 // By tick position, so tick 0 is dropped and a missed tick stays missed,
                 // exactly as the offline analysis fits the same recording.
                 predictor.AddCalibrationSample(i, prediction);
-                scorer.AddProtocolSample(i, prediction);
             }
             else if (trial.Role == BlockRole.Evaluation && PersonalCentroidBuilder.IsScoredTick(i)
                      && prediction.HasValue)
@@ -673,27 +696,19 @@ public class ProtocolRunner : MonoBehaviour
                 rawVotes.Add(new TickVote(i, (int)prediction.Value.Emotion));
             }
 
-            // Jev answers the evaluation block only. Calibration trials stay local, so they cost
-            // no API calls and the calibration is built from the local model's scores. The
-            // votes above stay local too; Jev's answers are in jev_predictions.csv.
-            float[] jevScores = null;
-            if (trial.Role == BlockRole.Evaluation && prediction.HasValue && scorer.Enabled)
-            {
-                jevScores = await scorer.Score(prediction.Value);
-                sessionLogger?.LogJev(trial.TrialId, trial.Emotion, i, jevScores, scorer.LastRaw, scorer.LastError, scorer.ProfileSent);
-            }
-
-            // Test block: show the final result every tick -- Jev's answer when it gave one,
-            // otherwise the calibrated emotion when calibration is ready (model scores and face
-            // movements against this person's own), the model's own prediction otherwise.
+            // Test block: show the final result every tick -- the calibrated emotion when
+            // calibration is ready (backend scores and face movements against this person's own),
+            // the backend's own prediction otherwise. The same rule for all four conditions; a
+            // tick that failed (no tracking, or Jev did not answer) shows a dash, never another
+            // model's answer.
             if (trial.Role == BlockRole.Evaluation)
             {
                 string seen = "—";
                 if (prediction.HasValue)
                 {
-                    var shown = jevScores != null ? JevScorer.Decide(jevScores)
-                              : calibrated.HasValue ? (Emotion)calibrated.Value.ClassIndex
-                              : prediction.Value.Emotion;
+                    var shown = calibrated.HasValue
+                        ? (Emotion)calibrated.Value.ClassIndex
+                        : prediction.Value.Emotion;
                     seen = EmotionToEmoji.TryGetValue(shown, out string emoji)
                         ? $"{emoji} {shown}"
                         : shown.ToString();
@@ -705,7 +720,7 @@ public class ProtocolRunner : MonoBehaviour
             // Logged whether or not tracking held, so a dropout is visible in the file
             // rather than showing up as a missing row.
             sessionLogger?.LogPrediction(trial.TrialId, trial.Role, trial.RepeatIndex,
-                                         trial.Emotion, i, prediction, calibrated);
+                                         trial.Emotion, i, prediction, calibrated, outcome.Error);
 
             LogCalibrationDebug(trial, i, prediction, calibrated);
 

@@ -6,6 +6,7 @@ using System.Text;
 
 using UnityEngine;
 
+using VcuSwimLab.Backends;
 using VcuSwimLab.Calibration;
 
 // Writes one self-contained CSV row per face prediction, plus a metadata sidecar
@@ -32,6 +33,11 @@ public sealed class SessionLogger : IDisposable
 {
     public const string StatusOk = "ok";
     public const string StatusNoTracking = "no_tracking";
+
+    // The backend itself failed (Jev unreachable, key rejected, ...), as opposed to the headset
+    // not delivering a face. Kept apart from `no_tracking` so a service outage is never
+    // mistaken for lost face tracking. `error_code` says which failure.
+    public const string StatusBackendError = "backend_error";
 
     // Canonical on-disk spellings, written instead of `blockRole.ToString()`. The enum member
     // names are capitalised and renaming one would silently change the file vocabulary that
@@ -72,9 +78,6 @@ public sealed class SessionLogger : IDisposable
 
     private StreamWriter writer;
     private StreamWriter trialWriter;
-
-    // Created on the first Jev answer, so a session without Jev has exactly the files it had before.
-    private StreamWriter jevWriter;
     private readonly StringBuilder row = new();
 
     public string SessionDirectory => sessionDirectory;
@@ -181,6 +184,15 @@ public sealed class SessionLogger : IDisposable
             sb.Append(',').Append(column);
         }
 
+        // Always last, after the calibration columns, for the same reason: appended, so no
+        // existing column moves. Which backend scored the row, why it failed if it did, and
+        // the backend's own answers before any normalisation (Jev; blank for SparseVR).
+        sb.Append(",backend_id,error_code");
+        foreach (var emotion in ClassOrder)
+        {
+            sb.Append(",raw_").Append(emotion);
+        }
+
         return sb.ToString();
     }
 
@@ -225,122 +237,59 @@ public sealed class SessionLogger : IDisposable
     /// calibrated columns rather than as a fallback prediction, so a reader can never mistake
     /// an uncalibrated tick for a calibrated one.
     /// </param>
+    /// <param name="error">
+    /// Why `prediction` is null, when the predictor said so (<c>PredictionOutcome.Error</c>).
+    /// Null with a null prediction is written as plain `no_tracking`, as before.
+    /// </param>
     public void LogPrediction(int trialId, BlockRole blockRole, int repeatIndex,
                               Emotion promptedEmotion, int predictionIndex,
                               FacePrediction? prediction,
-                              NearestCentroid? calibrated = null)
+                              NearestCentroid? calibrated = null,
+                              PredictionError? error = null)
         => LogRow(trialId,
                   Canonical(blockRole),
                   repeatIndex.ToString(CultureInfo.InvariantCulture),
-                  promptedEmotion, predictionIndex, prediction, calibrated);
+                  promptedEmotion, predictionIndex, prediction, calibrated, error);
 
     // One prediction from a session that has no calibration and no evaluation block -- the
     // scored game. `block_role` and `repeat_index` are left empty rather than guessed, so an
     // analysis that splits on them refuses the file outright instead of silently treating a
     // game recording as study data.
     public void LogPrediction(int trialId, Emotion promptedEmotion, int predictionIndex,
-                              FacePrediction? prediction)
+                              FacePrediction? prediction, PredictionError? error = null)
         => LogRow(trialId, string.Empty, string.Empty,
-                  promptedEmotion, predictionIndex, prediction, null);
+                  promptedEmotion, predictionIndex, prediction, null, error);
 
-    // What a session's metadata says about which model produced the predictions. Both game
-    // scripts call this instead of each spelling it out, and it never writes the API key.
-    public static void AddFaceBackendInfo(IDictionary<string, string> modelInfo, JevScorer scorer)
+    // What a session's metadata says about which condition produced the predictions. Both game
+    // scripts call this instead of each spelling it out. Everything is read from the predictor
+    // (what the library says is active), not from which block of ConditionSetup was enabled,
+    // and the API key is never written.
+    public static void AddFaceBackendInfo(IDictionary<string, string> modelInfo, NewFaceAuModel predictor)
     {
-        bool jev = scorer != null && scorer.Enabled;
+        bool jev = ConditionSetup.UsesJev(predictor);
 
-        modelInfo["face_backend"] = jev ? "LocalModel+Jev" : "LocalModel";
+        modelInfo["condition"] = ConditionSetup.Id(predictor);
+        modelInfo["condition_label"] = ConditionSetup.Label(predictor);
+        modelInfo["face_backend"] = ConditionSetup.BackendName(predictor);
+        modelInfo["backend_id"] = predictor.ActiveBackendId ?? string.Empty;
+        modelInfo["use_calibration"] = predictor.UseCalibration ? "true" : "false";
+
         if (jev)
         {
-            modelInfo["jev_model"] = scorer.Model;
-            modelInfo["jev_base_url"] = scorer.BaseUrl;
-            modelInfo["jev_note"] = "predictions.csv holds the local model's scores; Jev's answers are in jev_predictions.csv, joined on trial_id and prediction_index";
-        }
-    }
-
-    // Jev's answer for one tick, next to the local prediction in predictions.csv (same
-    // `trial_id` and `prediction_index`). `scores` is null when the call failed, with the
-    // reason in `error`; that row is kept so a Jev outage is visible rather than missing.
-    // `profileSent` says whether the request carried the player's own calibration.
-    public void LogJev(int trialId, Emotion promptedEmotion, int predictionIndex,
-                       float[] scores, float[] raw, string error, bool profileSent)
-    {
-        try
-        {
-            if (jevWriter == null)
-            {
-                jevWriter = new StreamWriter(Path.Combine(sessionDirectory, "jev_predictions.csv"),
-                                             append: false, new UTF8Encoding(false))
-                {
-                    AutoFlush = true,
-                };
-
-                var header = new StringBuilder(
-                    "timestamp_utc,session_id,trial_id,prompted_emotion,prediction_index,status,jev_predicted_emotion");
-                foreach (var emotion in ClassOrder)
-                {
-                    header.Append(",jev_score_").Append(emotion);
-                }
-
-                // Jev's answers before they are divided by their sum.
-                foreach (var emotion in ClassOrder)
-                {
-                    header.Append(",jev_raw_").Append(emotion);
-                }
-
-                header.Append(",profile_sent,error");
-                jevWriter.WriteLine(header.ToString());
-            }
-
-            var line = new StringBuilder();
-            line.Append(DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture)).Append('Z');
-            line.Append(',').Append(Escape(sessionId));
-            line.Append(',').Append(trialId.ToString(CultureInfo.InvariantCulture));
-            line.Append(',').Append(Escape(promptedEmotion.ToString()));
-            line.Append(',').Append(predictionIndex.ToString(CultureInfo.InvariantCulture));
-
-            if (scores == null)
-            {
-                // status, predicted emotion, then the seven scores and seven raw answers, all blank.
-                line.Append(",failed,");
-                for (int i = 0; i < 2 * ClassOrder.Length; ++i)
-                {
-                    line.Append(',');
-                }
-            }
-            else
-            {
-                line.Append(",ok,").Append(Escape(JevScorer.Decide(scores).ToString()));
-                for (int i = 0; i < ClassOrder.Length; ++i)
-                {
-                    line.Append(',').Append(Format(scores[i]));
-                }
-
-                for (int i = 0; i < ClassOrder.Length; ++i)
-                {
-                    line.Append(',');
-                    if (raw != null)
-                    {
-                        line.Append(Format(raw[i]));
-                    }
-                }
-            }
-
-            line.Append(',').Append(profileSent ? "yes" : "no");
-            line.Append(',').Append(Escape(error));
-            jevWriter.WriteLine(line.ToString());
-        }
-        catch (Exception e)
-        {
-            // A logging failure must not stop the game or the session.
-            Debug.LogError($"SessionLogger: could not write jev_predictions.csv ({e.GetType().Name}: {e.Message})");
+            modelInfo["jev_model"] = ConditionSetup.JevModel ?? string.Empty;
+            modelInfo["jev_base_url"] = ConditionSetup.JevBaseUrl ?? string.Empty;
+            modelInfo["jev_timeout_s"] = ConditionSetup.JevTimeout ?? string.Empty;
+            modelInfo["jev_max_retries"] = ConditionSetup.JevRetries ?? string.Empty;
+            modelInfo["jev_send_own_faces"] = ConditionSetup.JevSendsOwnFaces ?? string.Empty;
+            modelInfo["jev_note"] = "score_<Class> are Jev's seven answers divided by their sum; raw_<Class> are the answers as Jev gave them. A failed Jev call is a backend_error row; it is never answered by another model.";
         }
     }
 
     private void LogRow(int trialId, string blockRole, string repeatIndex,
                         Emotion promptedEmotion, int predictionIndex,
                         FacePrediction? prediction,
-                        NearestCentroid? calibrated)
+                        NearestCentroid? calibrated,
+                        PredictionError? error)
     {
         if (writer == null)
         {
@@ -364,7 +313,10 @@ public sealed class SessionLogger : IDisposable
 
             if (prediction == null)
             {
-                row.Append(",,0,").Append(StatusNoTracking).Append(',');
+                // `no_tracking` unless the predictor named a different failure; that one is
+                // `backend_error`, with its code in `error_code`.
+                bool backendFailed = error.HasValue && error.Value.Code != PredictionErrorCode.NoTracking;
+                row.Append(",,0,").Append(backendFailed ? StatusBackendError : StatusNoTracking).Append(',');
 
                 // scores, per-frame validity, and AU values are all absent
                 int blanks = ClassOrder.Length + windowFrames + (windowFrames * featuresPerFrame);
@@ -374,6 +326,7 @@ public sealed class SessionLogger : IDisposable
                 // still belongs to a session that was configured one way. Only the per-tick
                 // decision is missing, and it is missing because there was nothing to decide.
                 AppendCalibration(null, null);
+                AppendBackend(error?.BackendId, error, null);
 
                 writer.WriteLine(row.ToString());
                 return;
@@ -420,6 +373,7 @@ public sealed class SessionLogger : IDisposable
             }
 
             AppendCalibration(value.Emotion, calibrated);
+            AppendBackend(value.BackendId, null, value.Raw);
 
             writer.WriteLine(row.ToString());
         }
@@ -427,6 +381,23 @@ public sealed class SessionLogger : IDisposable
         {
             // Logging must never take the game down mid-session.
             Debug.LogError($"SessionLogger: failed to write row ({e.GetType().Name}: {e.Message})");
+        }
+    }
+
+    // The backend tail of a prediction row: backend_id, error_code, raw_<Class> x 7.
+    // `raw` is the backend's own answers (Jev); null for SparseVR, written as blanks.
+    private void AppendBackend(string backendId, PredictionError? error, float[] raw)
+    {
+        row.Append(',').Append(Escape(backendId));
+        row.Append(',').Append(error.HasValue ? error.Value.Code.ToString() : string.Empty);
+
+        for (int i = 0; i < ClassOrder.Length; ++i)
+        {
+            row.Append(',');
+            if (raw != null && i < raw.Length)
+            {
+                row.Append(Format(raw[i]));
+            }
         }
     }
 
@@ -629,12 +600,11 @@ public sealed class SessionLogger : IDisposable
             sb.AppendLine("    \"prediction_index\": \"0-based tick within the trial\",");
             sb.AppendLine("    \"predicted_emotion\": \"argmax class, empty when status is no_tracking\",");
             sb.AppendLine("    \"correct\": \"1 when predicted_emotion equals prompted_emotion\",");
-            sb.AppendLine("    \"status\": \"ok, or no_tracking when no valid window was available\",");
+            sb.AppendLine("    \"status\": \"ok; no_tracking when no valid window was available; backend_error when the backend failed (see error_code)\",");
             sb.AppendLine("    \"generation\": \"monotonic count of valid frames pushed into the ring buffer\",");
             sb.AppendLine("    \"score_<Class>\": \"model output for that class, in class_order\",");
             sb.AppendLine("    \"frame_<f>_valid\": \"always 1 for logged windows; invalid frames are dropped upstream\",");
-            sb.Append("    \"frame_<f>_au_<a>\": \"action unit a of window frame f, frame 0 oldest\"");
-            sb.AppendLine(calibration != null ? "," : "");
+            sb.AppendLine("    \"frame_<f>_au_<a>\": \"action unit a of window frame f, frame 0 oldest\",");
             if (calibration != null)
             {
                 sb.AppendLine("    \"calibration_mode\": \"raw or movement; fixed at session start\",");
@@ -648,11 +618,15 @@ public sealed class SessionLogger : IDisposable
                 sb.AppendLine("    \"calibrated_runner_up_similarity\": \"the same sum for the second-placed emotion\",");
                 sb.AppendLine("    \"calibrated_margin\": \"winner minus runner-up; a small value marks a tick that nearly went the other way\",");
                 sb.AppendLine("    \"calibration_valid\": \"true once a usable profile was sealed; blank on calibration-block rows, which were written before the seal\",");
-                sb.AppendLine("    \"calibration_error\": \"why the profile is unusable, empty when it is fine\"");
+                sb.AppendLine("    \"calibration_error\": \"why the profile is unusable, empty when it is fine\",");
             }
+            sb.AppendLine("    \"backend_id\": \"the library's id of the backend that scored the row (the model asset's name for SparseVR, jev:<model>:p<prompt version> for Jev)\",");
+            sb.AppendLine("    \"error_code\": \"the library's PredictionErrorCode when the row failed, empty otherwise\",");
+            sb.AppendLine("    \"raw_<Class>\": \"the backend's own answer for that class before normalisation (Jev); blank for SparseVR\"");
             sb.AppendLine("  },");
             sb.AppendLine("  \"notes\": [");
-            sb.AppendLine("    \"Face scores are probabilities: the face graph already ends in Softmax and no second one is appended.\",");
+            sb.AppendLine("    \"SparseVR face scores are probabilities: the face graph already ends in Softmax and no second one is appended.\",");
+            sb.AppendLine("    \"Jev scores (models.face_backend = Jev) are its seven yes/no answers divided by their sum; raw_<Class> holds the answers themselves.\",");
             sb.AppendLine("    \"Frame 0 is the oldest frame of the window and frame 4 the newest.\",");
             sb.AppendLine("    \"The window is an exact copy of the tensor input for that prediction.\",");
             sb.AppendLine("    \"All decimals use invariant culture, so '.' is the decimal separator.\"");
@@ -790,7 +764,6 @@ public sealed class SessionLogger : IDisposable
     {
         // The trial file is closed even if the prediction file was already closed, so an
         // interrupted session does not leave one of the two open.
-        Close(ref jevWriter, "jev_predictions.csv");
         Close(ref trialWriter, "trials.csv");
         Close(ref writer, "predictions.csv");
     }

@@ -8,4 +8,11 @@
     Preserving the assembly keeps those methods in the stripped output.
   -->
   <assembly fullname="Unity.InferenceEngine" preserve="all"/>
+
+  <!--
+    Jev (conditions 3 and 4) builds and reads its requests with Newtonsoft.Json, which reaches
+    types by reflection. Stripping on the headset's IL2CPP build can remove what that needs. The
+    Newtonsoft package may already preserve itself; this makes sure, and costs nothing if so.
+  -->
+  <assembly fullname="Newtonsoft.Json" preserve="all"/>
 </linker>

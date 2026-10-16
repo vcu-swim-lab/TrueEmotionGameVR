@@ -41,7 +41,7 @@ To switch, untick one and tick the other, then **Build and Run** again.
 
 | Setting | Where (Inspector) | Default | What it does |
 |---|---|---|---|
-| **Use Calibration** | `New Face Au Model` | Off | Adapts the predictions to each player (movement calibration). Off: the model's own answer is used everywhere |
+| **Use Calibration** | `New Face Au Model` | Off | **Overridden at start-up** by the condition you enabled in `ConditionSetup.Configure` (see *The four conditions*): conditions 2 and 4 switch it on, 1 and 3 off. Leave it unticked in the scene |
 | **Save Results** | `New Face Au Model` | On | Saves every prediction to a results file on the headset (see *Results*) |
 | **Face Model** | `New Face Au Model` | the acted-data model | The emotion model; leave it as it is |
 | **Player Id** | `Progress Game` | `player1` | The name a player's calibration is saved under |
@@ -53,33 +53,52 @@ The settings are saved in the scene, so **after changing one, Build and Run agai
 headset (in the Editor, press Play again). A running session never changes mode halfway.
 
 
-## 🌐 Jev (temporary, on by default while testing)
+## 🔀 The four conditions
 
-Besides the local model, each prediction can be sent to [Typesafe's Jev model](https://docs.typesafe.ai),
-an online service. The local model still scores every tick and is what calibration and
-`predictions.csv` use; Jev's answer is what the game scores and what the study screen shows.
+Every run uses exactly **one** of four conditions: which model predicts, crossed with whether the
+player's calibration is used. The game uses the VREmotionDetection package for the model, the
+calibration and the prediction, and nothing else.
 
-- **It is on by default** (`Jev Scorer`, added to the Canvas when the game starts, `Use Jev` ticked).
-  To switch it off, add a `Jev Scorer` component to the Canvas and untick **Use Jev**, or set the
-  default in `Assets/Scripts/Jev/JevScorer.cs` to `false`. **Do this before collecting study data**:
-  the study protocol is written for the local model.
-- **Key:** set the `TYPESAFE_API_KEY` environment variable before opening Unity (Editor). For a
-  headset build, create **Assets > Create > VR Emotion > Jev Settings**, paste the key there and
-  assign it to the `Jev Scorer`. That asset is git-ignored; never commit it. A key inside a build can
-  be extracted, so for anything shared use a proxy (the asset's Base Url).
-- **No key or no network:** the game keeps running on the local model, and the console warns once.
-- **Privacy:** while Jev is on, the player's face-tracking numbers leave the device. Get consent.
-- **Reading the numbers:** Jev answers each emotion separately with the chance that it is "yes", and
-  the game picks the highest. `jev_score_*` is those answers divided by their sum (so a lone weak
-  answer shows as 1.0); `jev_raw_*` is the answer itself, and is what the game reports as Jev's
-  confidence. The end screen shows what Jev decided, and labels the library's summary "(local model)".
-- **Logs:** `session_metadata.json` records `face_backend`; Jev's answers are in
-  `jev_predictions.csv` (join on `trial_id` and `prediction_index`). Only evaluation trials ask Jev
-  in the study, and the trial votes in `trials.csv` stay on the local model.
-- **Calibration:** with **Use Calibration** on and a finished (or loaded) calibration, each request also
-  carries that player's own movement signature for every emotion, as the library does, and
-  `jev_predictions.csv` says so in `profile_sent`. Without a calibration Jev judges from general
-  knowledge of expressions. The calibration itself is always built from the local model.
+| # | Condition | Model | Calibration |
+|---|---|---|---|
+| 1 | `sparsevr_nocal` | SparseVR, on the headset | off |
+| 2 | `sparsevr_cal` | SparseVR, on the headset | on |
+| 3 | `jev_nocal` | Jev, Typesafe's cloud model | off |
+| 4 | `jev_cal` | Jev, Typesafe's cloud model | on (built from Jev's scores, about 70 requests) |
+
+**Choosing one.** Open `Assets/Scripts/Conditions/ConditionSetup.cs`. `Configure` holds the four
+blocks, each a few lines of package calls with comments. Exactly one is active (condition 1 as
+committed). To test another: put `//` in front of the active block's lines, remove the `//` from the
+block you want, **Build and Run**. Both programs (study protocol and emotion game) use it.
+
+**Jev key (conditions 3 and 4).** Paste your own Typesafe key into `Assets/Resources/jev_api_key.txt`
+(replacing the placeholder line), then build. The file is git-ignored; it is packed into the build,
+so anyone with the APK can read the key: delete it from the file when you are done. In the Editor
+the `TYPESAFE_API_KEY` environment variable also works.
+
+**Checked before every run.** The screen shows the condition; for Jev it sends one test request
+first. A rejected key or no connection stops the run with the reason on screen (the game offers
+"press any button to try again"), instead of playing a session of failed predictions.
+
+**No fallback.** If Jev does not answer for a prediction, that prediction fails: nothing is scored,
+the log row says `backend_error` with the reason, and the local model is **not** asked instead.
+
+**What is logged.** `session_metadata.json` -> `models`: `condition`, `condition_label`,
+`face_backend` (`SparseVr` / `Jev`), `backend_id`, `use_calibration`, and for Jev the model, URL,
+timeout, retries and `jev_send_own_faces` (never the key). `predictions.csv` ends with
+`backend_id`, `error_code` and `raw_<Emotion>` (Jev's seven answers before they are divided by
+their sum; blank for SparseVR). `status` is `ok`, `no_tracking` or `backend_error`. Jev scores
+(`score_*`) are its answers divided by their sum; the game's confidence is Jev's own answer
+(`raw_*`). The old `jev_predictions.csv` no longer exists. A pooled analysis must filter on
+`condition`.
+
+**Calibration files.** Saved per model under `<Player Id>-sparsevr` or `<Player Id>-jev`: the
+library refuses to load one model's calibration into the other, and one file each means testing
+both never overwrites the other.
+
+**Privacy.** In conditions 3 and 4 the player's face-tracking numbers leave the device. Get consent.
+
+Step-by-step headset checks for each condition: `Docs/CONDITION_TEST_CHECKLIST.md`.
 
 
 ## 🧪 Study protocol (`Protocol Runner`)
@@ -87,7 +106,7 @@ an online service. The local model still scores every tick and is what calibrati
 Each trial: prompt (emoji and name) → 3-2-1 countdown → hold the face for 10 seconds (one
 prediction per second) → "Recording complete" → relax.
 
-**Use Calibration on — two parts:**
+**Calibration on (conditions 2 and 4) — two parts:**
 
 1. **Part 1: Calibration** — 7 trials, one per emotion, shown as "Calibration 3 of 7". The
    system learns how this person makes each expression.
@@ -96,8 +115,8 @@ prediction per second) → "Recording complete" → relax.
    result: the calibrated emotion, which compares both the model's scores and the face movements
    with this person's own calibration.
 
-**Use Calibration off — one part:** the calibration part is skipped. The session is the 14
-trials, and "Result: …" shows the model's own prediction.
+**Calibration off (conditions 1 and 3) — one part:** the calibration part is skipped. The session is
+the 14 trials, and "Result: …" shows the chosen model's own prediction (SparseVR's or Jev's).
 
 "Result" is always the same value as the `emotion` column of the results file; the
 `model_emotion` column holds the model's own prediction.
@@ -109,7 +128,7 @@ emotion); sessions from `session-local-v1`, which showed nothing, are not pooled
 
 ## 😀 Emotion game (`Progress Game`)
 
-1. **Calibration (only when Use Calibration is ticked):** the player chooses
+1. **Calibration (only in conditions 2 and 4):** the player chooses
    - **A** — calibrate now (each of the 7 faces, about 90 seconds; saved for this Player Id),
    - **B** — skip,
    - **X** — use the saved calibration (shown only if one exists).
@@ -154,8 +173,9 @@ committed: `HeadsetResults/`, `Logs/`, `Analysis/` (scripts and participant data
 
 | Folder | Contents |
 |---|---|
-| `Assets/Scripts/` | `ProtocolRunner` (study), `ProgressGame` (emotion game), `SessionLogger` (detailed logs), `Calibration/` (session settings and trial voting), `Jev/` (temporary copy of the library's Jev client, plus `JevScorer`) |
-| `Assets/Tests/EditMode/` | Tests: calibration math, parity with the Python analysis, scene setup |
+| `Assets/Scripts/` | `ProtocolRunner` (study), `ProgressGame` (emotion game), `SessionLogger` (detailed logs), `Conditions/` (`ConditionSetup`: the four conditions), `Calibration/` (session settings, trial voting, condition naming) |
+| `Assets/Tests/EditMode/` | Tests: calibration math, parity with the Python analysis, scene setup, condition naming and key-file reading |
+| `Assets/Resources/jev_api_key.txt` | Where you paste the Typesafe key for conditions 3 and 4 (git-ignored) |
 | `Assets/Scenes/Main.unity` | The scene |
 | `Docs/` | Study protocol and reports |
 | `Archive/` | A snapshot of the offline analysis scripts, notebooks (code only) and reports, without data |
@@ -164,7 +184,8 @@ committed: `HeadsetResults/`, `Logs/`, `Analysis/` (scripts and participant data
 ## ✅ Tests
 
 In Unity: **Window > General > Test Runner > EditMode > Run All**. The scene tests expect the
-committed scene to have **Use Calibration** off; untick it before committing the scene.
+committed scene to have **Use Calibration** off; untick it before committing the scene (the
+conditions switch calibration on at run time).
 
 
 ## 📝 License

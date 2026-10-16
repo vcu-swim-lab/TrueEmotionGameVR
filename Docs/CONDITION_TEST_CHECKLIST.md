@@ -88,6 +88,25 @@ Do these once each:
 - A condition-4 session whose `calibration_valid` is `false` ran without a usable calibration; its
   calibrated columns are blank.
 
+## If Unity shows "ExecuteMenuItem target for Audio does not exist"
+
+That message is not from this project's code (nothing here calls `ExecuteMenuItem`) and it is not a C#
+compile error. It means the Editor is in a half-loaded state, usually after the package changed. Try, in
+order, and stop at the first that works:
+
+1. **Window > Layouts > Default**, then Play.
+2. Close Unity, delete `Packages/packages-lock.json` (Unity writes a new one), reopen, and wait until the
+   spinner at the bottom right stops. Check **Window > Package Manager > In Project**: *VR Emotion
+   Detector* 2.2.0 (git, `jev_branch`) must be listed without an error icon.
+3. Close Unity, delete the `Library/` folder, reopen (a full reimport, 10-30 minutes).
+4. Still blocked? Find the real error in the Editor log (PowerShell) and send it:
+   ```powershell
+   Select-String -Path "$env:LOCALAPPDATA\Unity\Editor\Editor.log" -Pattern "error CS|ExecuteMenuItem|error:|Exception|Package Manager|Safe Mode" | Select-Object -First 40
+   ```
+
+Remember `Assets/Resources/jev_api_key.txt` is git-ignored: on a second computer (for example the Windows
+PC) create it there by hand before testing conditions 3 and 4.
+
 ## Done when
 
 All four conditions start, show their own label, predict with the right backend (`backend=` in the log

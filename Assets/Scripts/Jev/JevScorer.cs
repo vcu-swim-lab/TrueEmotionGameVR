@@ -61,6 +61,11 @@ public class JevScorer : MonoBehaviour
     // True when the last Score call sent the player's calibration to Jev.
     public bool ProfileSent { get; private set; }
 
+    // Jev's seven answers from the last Score call before they were divided by their sum, or
+    // null when it failed. Each is the probability that its own question is "yes", so a lone
+    // 0.05 and a lone 0.95 both become 1.0 in the scores; these tell them apart.
+    public float[] LastRaw { get; private set; }
+
     // Why the last Score call returned null; null when it worked or Jev is off.
     public string LastError => lastError;
 
@@ -98,6 +103,7 @@ public class JevScorer : MonoBehaviour
     public async Awaitable<float[]> Score(FacePrediction prediction)
     {
         lastError = null;
+        LastRaw = null;
 
         if (!useJev)
         {
@@ -110,6 +116,7 @@ public class JevScorer : MonoBehaviour
             var result = await JevClient.Classify(Settings, prediction.Window, profile);
 
             lastError = result.Error;
+            LastRaw = result.Raw;
             Warn(result.Error);
             return result.Scores;
         }

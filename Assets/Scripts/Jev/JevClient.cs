@@ -10,19 +10,26 @@ namespace VcuSwimLab.Jev
     public readonly struct JevResult
     {
         public readonly float[] Scores;
+
+        // Jev's own answers before they are normalised to sum to 1: each is the probability that
+        // its question is "yes", on its own. (Game-side addition; see README.md in this folder.)
+        public readonly float[] Raw;
         public readonly string Error;
 
-        private JevResult(float[] scores, string error)
+        private JevResult(float[] scores, float[] raw, string error)
         {
             Scores = scores;
+            Raw = raw;
             Error = error;
         }
 
         public bool Ok => Scores != null;
 
-        public static JevResult Success(float[] scores) => new JevResult(scores, null);
+        public static JevResult Success(float[] scores) => new JevResult(scores, null, null);
 
-        public static JevResult Failure(string error) => new JevResult(null, error);
+        public static JevResult Success(float[] scores, float[] raw) => new JevResult(scores, raw, null);
+
+        public static JevResult Failure(string error) => new JevResult(null, null, error);
     }
 
     public static class JevClient
@@ -72,8 +79,8 @@ namespace VcuSwimLab.Jev
 
                 if (status >= 200 && status < 300)
                 {
-                    return JevResponseParser.TryParse(text, ClassNames, out var scores, out string error)
-                        ? JevResult.Success(scores)
+                    return JevResponseParser.TryParse(text, ClassNames, out var scores, out var raw, out string error)
+                        ? JevResult.Success(scores, raw)
                         : JevResult.Failure(error);
                 }
 

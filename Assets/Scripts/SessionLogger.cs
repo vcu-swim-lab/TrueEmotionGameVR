@@ -263,7 +263,7 @@ public sealed class SessionLogger : IDisposable
     // reason in `error`; that row is kept so a Jev outage is visible rather than missing.
     // `profileSent` says whether the request carried the player's own calibration.
     public void LogJev(int trialId, Emotion promptedEmotion, int predictionIndex,
-                       float[] scores, string error, bool profileSent)
+                       float[] scores, float[] raw, string error, bool profileSent)
     {
         try
         {
@@ -282,6 +282,12 @@ public sealed class SessionLogger : IDisposable
                     header.Append(",jev_score_").Append(emotion);
                 }
 
+                // Jev's answers before they are divided by their sum.
+                foreach (var emotion in ClassOrder)
+                {
+                    header.Append(",jev_raw_").Append(emotion);
+                }
+
                 header.Append(",profile_sent,error");
                 jevWriter.WriteLine(header.ToString());
             }
@@ -295,8 +301,9 @@ public sealed class SessionLogger : IDisposable
 
             if (scores == null)
             {
+                // status, predicted emotion, then the seven scores and seven raw answers, all blank.
                 line.Append(",failed,");
-                for (int i = 0; i < ClassOrder.Length; ++i)
+                for (int i = 0; i < 2 * ClassOrder.Length; ++i)
                 {
                     line.Append(',');
                 }
@@ -307,6 +314,15 @@ public sealed class SessionLogger : IDisposable
                 for (int i = 0; i < ClassOrder.Length; ++i)
                 {
                     line.Append(',').Append(Format(scores[i]));
+                }
+
+                for (int i = 0; i < ClassOrder.Length; ++i)
+                {
+                    line.Append(',');
+                    if (raw != null)
+                    {
+                        line.Append(Format(raw[i]));
+                    }
                 }
             }
 

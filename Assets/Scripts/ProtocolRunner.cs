@@ -680,7 +680,7 @@ public class ProtocolRunner : MonoBehaviour
             if (trial.Role == BlockRole.Evaluation && prediction.HasValue && scorer.Enabled)
             {
                 jevScores = await scorer.Score(prediction.Value);
-                sessionLogger?.LogJev(trial.TrialId, trial.Emotion, i, jevScores, scorer.LastError, scorer.ProfileSent);
+                sessionLogger?.LogJev(trial.TrialId, trial.Emotion, i, jevScores, scorer.LastRaw, scorer.LastError, scorer.ProfileSent);
             }
 
             // Test block: show the final result every tick -- Jev's answer when it gave one,

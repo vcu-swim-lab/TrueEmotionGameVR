@@ -20,7 +20,15 @@ namespace VcuSwimLab.Jev
 
         public static bool TryParse(string json, IReadOnlyList<string> classNames, out float[] scores, out string error)
         {
+            return TryParse(json, classNames, out scores, out _, out error);
+        }
+
+        // As above, and `raw` holds Jev's seven answers as they came, before they are divided by
+        // their sum. (Game-side addition; see README.md in this folder.)
+        public static bool TryParse(string json, IReadOnlyList<string> classNames, out float[] scores, out float[] raw, out string error)
+        {
             scores = null;
+            raw = null;
 
             if (!TryParseObject(json, out var root) || !(root["answers"] is JObject answers))
             {
@@ -54,6 +62,7 @@ namespace VcuSwimLab.Jev
             }
 
             scores = values.Select(v => (float)(v / sum)).ToArray();
+            raw = values.Select(v => (float)v).ToArray();
             error = null;
             return true;
         }

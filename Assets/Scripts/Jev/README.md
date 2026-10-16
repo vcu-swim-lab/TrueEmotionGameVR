@@ -5,6 +5,13 @@
 uncommitted `jev_branch`). They are here only so the Jev backend can be tested before the library
 publishes it. Do not edit them here; change the library's copy instead.
 
+**One deliberate difference:** `JevResult.Raw` and a second `JevResponseParser.TryParse` overload
+(with `out float[] raw`) carry Jev's answers before they are divided by their sum. Each answer is
+the probability that its own question is "yes", so a lone weak answer and a lone strong one both
+normalise to 1.0, and the scores alone cannot tell them apart. The original `TryParse` signature is
+unchanged. Offer this to the library's parser when Jev moves there (and then the copies are identical
+again).
+
 `JevScorer` is the one game-side file. It calls the copied `JevClient` on the same five-frame
 window the local model scored, and returns Jev's seven scores next to the local prediction.
 It also gives Jev the player's calibration, as the library does. The library keeps its

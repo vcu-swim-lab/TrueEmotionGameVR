@@ -69,6 +69,10 @@ an online service. The local model still scores every tick and is what calibrati
   be extracted, so for anything shared use a proxy (the asset's Base Url).
 - **No key or no network:** the game keeps running on the local model, and the console warns once.
 - **Privacy:** while Jev is on, the player's face-tracking numbers leave the device. Get consent.
+- **Reading the numbers:** Jev answers each emotion separately with the chance that it is "yes", and
+  the game picks the highest. `jev_score_*` is those answers divided by their sum (so a lone weak
+  answer shows as 1.0); `jev_raw_*` is the answer itself, and is what the game reports as Jev's
+  confidence. The end screen shows what Jev decided, and labels the library's summary "(local model)".
 - **Logs:** `session_metadata.json` records `face_backend`; Jev's answers are in
   `jev_predictions.csv` (join on `trial_id` and `prediction_index`). Only evaluation trials ask Jev
   in the study, and the trial votes in `trials.csv` stay on the local model.

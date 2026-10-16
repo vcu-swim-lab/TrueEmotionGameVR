@@ -49,6 +49,11 @@ public class ProgressGame : MonoBehaviour
     // Jev's answer next to the local model's; see Assets/Scripts/Jev/README.md.
     private JevScorer scorer;
 
+    // What Jev decided this session, for the end screen: how often each emotion won and the
+    // sum of Jev's own answers for it. The library's summary below it is the local model's.
+    private readonly int[] jevCounts = new int[System.Enum.GetValues(typeof(Emotion)).Length];
+    private readonly double[] jevAnswerSums = new double[System.Enum.GetValues(typeof(Emotion)).Length];
+
     // Monotonic across rounds, so restarting the game does not reuse trial ids.
     private int trialCounter;
 
@@ -219,7 +224,9 @@ public class ProgressGame : MonoBehaviour
 
             text.text = "Thanks for playing! Scores:\n" +
                         string.Join("\n", score.Select(kv => $"{kv.Key}: {kv.Value}/10")) + "\n\n" +
-                        "What the headset saw this session:\n" + predictor.GetResultsSummary() + "\n\n" +
+                        JevSummaryBlock() +
+                        "What the headset saw this session" + (JevAnswered() > 0 ? " (local model)" : "") + ":\n" +
+                        predictor.GetResultsSummary() + "\n\n" +
                         "Press any button to restart";
 
             Debug.Log("All emotion predictions collected.");
@@ -270,13 +277,18 @@ public class ProgressGame : MonoBehaviour
                 var jevScores = await scorer.Score(value);
                 if (scorer.Enabled)
                 {
-                    sessionLogger?.LogJev(trialId, emotion, i, jevScores, scorer.LastError, scorer.ProfileSent);
+                    sessionLogger?.LogJev(trialId, emotion, i, jevScores, scorer.LastRaw, scorer.LastError, scorer.ProfileSent);
                 }
 
                 if (jevScores != null)
                 {
+                    // Jev's own answer for the winner, not its share of the seven answers: the
+                    // shares always sum to 1, so a lone weak answer would read as 100%.
                     predicted = JevScorer.Decide(jevScores);
-                    confidence = jevScores[(int)predicted];
+                    confidence = scorer.LastRaw != null ? scorer.LastRaw[(int)predicted] : jevScores[(int)predicted];
+
+                    jevCounts[(int)predicted]++;
+                    jevAnswerSums[(int)predicted] += confidence;
                 }
 
                 Debug.Log($"[game] round {trialId} {emotion} tick {i}: {predicted} " +
@@ -306,6 +318,33 @@ public class ProgressGame : MonoBehaviour
         print("Done with predicting " + emotion);
 
         return score;
+    }
+
+    private int JevAnswered() => jevCounts.Sum();
+
+    // The end-screen block for Jev's decisions, ending in a blank line; empty when Jev gave none.
+    private string JevSummaryBlock()
+    {
+        int total = JevAnswered();
+        if (total == 0)
+        {
+            return string.Empty;
+        }
+
+        var lines = new List<string> { $"What Jev decided this session ({total} answers):" };
+        foreach (int e in Enumerable.Range(0, jevCounts.Length).OrderByDescending(e => jevCounts[e]))
+        {
+            if (jevCounts[e] == 0)
+            {
+                continue;
+            }
+
+            lines.Add(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                                    "{0}: {1:0}% (average answer {2:0.00})",
+                                    (Emotion)e, 100.0 * jevCounts[e] / total, jevAnswerSums[e] / jevCounts[e]));
+        }
+
+        return string.Join("\n", lines) + "\n\n";
     }
 
     // Ask once, before the first round. Calibration is optional: skipping it, or a failed

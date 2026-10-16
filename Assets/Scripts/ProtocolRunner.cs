@@ -52,9 +52,28 @@ public class ProtocolRunner : MonoBehaviour
     // the prediction but no score.
     public const string ProtocolVersion = "session-local-v3";
 
+    // The demo (the Demo checkbox) is a separate flow for showing the system to viewers, not a
+    // study session: one test pass, a get-ready countdown, a remaining-time bar and the trial's
+    // predicted emotion after each test trial. Its recordings carry this version instead, so
+    // they are never pooled with study recordings.
+    public const string DemoProtocolVersion = "demo-v1";
+
     public const int CalibrationPasses = 1;   // K block: 7 trials
     public const int EvaluationPasses = 2;    // D block: 14 trials
+    public const int DemoEvaluationPasses = 1; // demo test block: 7 trials
     public const int TicksPerTrial = 10;
+
+    // Demo screen lengths, in seconds. Longer than the study's, so viewers can read them.
+    private const float DemoIntroSeconds = 10f;
+    private const float DemoPartSeconds = 6f;
+    private const int DemoGetReadySeconds = 5;
+    private const float DemoResultSeconds = 10f;
+
+    // Demo text colours, on the emotion word only: the predicted emotion when it matches the
+    // acted one and when it does not, and the next emotion.
+    private const string DemoCorrectColor = "#9BE15D";
+    private const string DemoWrongColor = "#FF5A5A";
+    private const string DemoNextColor = "#FFF04D";
 
     [Header("Scene")]
     [Tooltip("The instruction text. Left empty, the object named 'Instruction' is used.")]
@@ -74,6 +93,12 @@ public class ProtocolRunner : MonoBehaviour
     [Tooltip("Shortens every trial so the flow can be walked through at a desk. " +
              "Recordings made with this on are marked as rehearsals and must not be analysed.")]
     [SerializeField] private bool fastRehearsal = false;
+
+    [Header("Demo")]
+    [Tooltip("Runs the demo instead of the study: each emotion once after calibration, a " +
+             "get-ready countdown, a remaining-time bar and the predicted emotion after each " +
+             "trial. Recordings are marked as demo and must not be analysed with study data.")]
+    [SerializeField] private bool demoMode = false;
 
     [Header("Calibration")]
     [Tooltip("Whether the session calibrates is the \"Use Calibration\" checkbox on the New Face " +
@@ -234,21 +259,28 @@ public class ProtocolRunner : MonoBehaviour
             : Environment.TickCount & 0x7FFFFFFF;
 
         // The library's "Use Calibration" checkbox: off, the calibration block is skipped.
-        Plan = BuildPlan(seedUsed, includeCalibration: predictor.UseCalibration);
+        Plan = BuildPlan(seedUsed, includeCalibration: predictor.UseCalibration,
+                         evaluationPasses: EvaluationPassesThisSession);
 
         RunSession();
     }
+
+    private int EvaluationPassesThisSession => demoMode ? DemoEvaluationPasses : EvaluationPasses;
+
+    void Update() => demoScreen?.Tick();
 
     // The calibration block, then the evaluation block, each a sequence of shuffled passes
     // over all seven states. Resolved up front so the whole schedule is fixed and recordable
     // in advance rather than decided trial by trial.
     // `includeCalibration`: false leaves out the calibration block, so a session without
-    // calibration is the test block only.
-    public static List<PlannedTrial> BuildPlan(int seed, bool includeCalibration = true)
+    // calibration is the test block only. `evaluationPasses`: the test block's passes (the
+    // demo runs one).
+    public static List<PlannedTrial> BuildPlan(int seed, bool includeCalibration = true,
+                                               int evaluationPasses = EvaluationPasses)
     {
         var random = new Random(seed);
         var plan = new List<PlannedTrial>(
-            (CalibrationPasses + EvaluationPasses) * PromptedEmotions.Length);
+            (CalibrationPasses + evaluationPasses) * PromptedEmotions.Length);
 
         // Carried across passes *and* across the block boundary, so the first evaluation
         // trial also differs from the last calibration trial.
@@ -292,7 +324,7 @@ public class ProtocolRunner : MonoBehaviour
         {
             AddPasses(BlockRole.Calibration, CalibrationPasses);
         }
-        AddPasses(BlockRole.Evaluation, EvaluationPasses);
+        AddPasses(BlockRole.Evaluation, evaluationPasses);
 
         return plan;
     }
@@ -342,9 +374,11 @@ public class ProtocolRunner : MonoBehaviour
             int calibrationTrials = Plan.Count(t => t.Role == BlockRole.Calibration);
             int evaluationTrials = Plan.Count(t => t.Role == BlockRole.Evaluation);
 
+            int evaluationPasses = EvaluationPassesThisSession;
+
             var sessionInfo = new Dictionary<string, string>
             {
-                { "protocol_version", ProtocolVersion },
+                { "protocol_version", demoMode ? DemoProtocolVersion : ProtocolVersion },
                 { "randomization_seed", seedUsed.ToString() },
                 { "trial_count", Plan.Count.ToString() },
 
@@ -356,19 +390,25 @@ public class ProtocolRunner : MonoBehaviour
                 { "calibration_trials", calibrationTrials.ToString() },
                 { "evaluation_trials", evaluationTrials.ToString() },
                 { "calibration_passes", CalibrationPasses.ToString() },
-                { "evaluation_passes", EvaluationPasses.ToString() },
-                { "evaluation_repeats", EvaluationPasses.ToString() },
+                { "evaluation_passes", evaluationPasses.ToString() },
+                { "evaluation_repeats", evaluationPasses.ToString() },
 
                 // What the participant saw, recorded so the difference is machine-detectable.
                 // Recordings made before this field exists did not show a counter; a reader
                 // comparing them against later ones can tell, without having to know which
-                // build produced which folder.
-                { "trial_counter_shown", "true" },
+                // build produced which folder. The demo shows none.
+                { "trial_counter_shown", demoMode ? "false" : "true" },
 
                 { "ticks_per_trial", (fastRehearsal ? 3 : TicksPerTrial).ToString() },
                 { "fast_rehearsal", fastRehearsal ? "true" : "false" },
                 { "self_report", "not collected (deliberate; no controller in this study)" },
             };
+
+            // Only in demo recordings, so a study recording's metadata is unchanged.
+            if (demoMode)
+            {
+                sessionInfo["demo"] = "true";
+            }
 
             sessionLogger = new SessionLogger(
                 NewFaceAuModel.WindowFrames,
@@ -415,9 +455,18 @@ public class ProtocolRunner : MonoBehaviour
     // does not. The recording is marked in its metadata too, and the analysis refuses it.
     private void Show(string message)
     {
+        demoScreen?.Hide();
         instructionText.text = fastRehearsal
             ? "-- REHEARSAL - NOT VALID DATA --\n\n" + message
             : message;
+    }
+
+    // The demo's own screens replace the instruction text; only a rehearsal banner stays on it.
+    private DemoScreen demoScreen;
+
+    private void ClearForDemoScreen()
+    {
+        instructionText.text = fastRehearsal ? "-- REHEARSAL - NOT VALID DATA --" : "";
     }
 
     // The canvas is fixed in the room, and the room's forward is the headset's tracking
@@ -484,6 +533,11 @@ public class ProtocolRunner : MonoBehaviour
     {
         await PlaceCanvasInFrontOfPlayer();
 
+        if (demoMode)
+        {
+            demoScreen = new DemoScreen(instructionText);
+        }
+
         if (fastRehearsal)
         {
             Debug.LogWarning($"{nameof(ProtocolRunner)}: FAST REHEARSAL is on. This recording " +
@@ -491,7 +545,7 @@ public class ProtocolRunner : MonoBehaviour
         }
 
         Debug.Log($"{nameof(ProtocolRunner)}: {Plan.Count} trials, " +
-                  $"seed {seedUsed}, protocol {ProtocolVersion}");
+                  $"seed {seedUsed}, protocol {(demoMode ? DemoProtocolVersion : ProtocolVersion)}");
 
         // Read once, here, and never again. Everything downstream holds this object rather
         // than the component, so a checkbox toggled mid-session cannot reach the session.
@@ -525,16 +579,29 @@ public class ProtocolRunner : MonoBehaviour
         // that the operator's note is written at the same moment the session starts.
         Debug.Log($"{nameof(ProtocolRunner)}: recording to {sessionLogger.SessionDirectory}");
 
-        Show("Each trial:\n" +
-             "1. See the emotion\n" +
-             "2. Count down 3-2-1\n" +
-             "3. Hold the face for 10 seconds\n" +
-             "4. Relax");
-        await Awaitable.WaitForSecondsAsync(Scaled(6f));
+        if (demoMode)
+        {
+            Show("Each trial:\n" +
+                 "1. Get ready (5 seconds)\n" +
+                 "2. Act the emotion shown (10 seconds)\n" +
+                 "3. See the emotion the system predicted");
+            await Awaitable.WaitForSecondsAsync(Scaled(DemoIntroSeconds));
+        }
+        else
+        {
+            Show("Each trial:\n" +
+                 "1. See the emotion\n" +
+                 "2. Count down 3-2-1\n" +
+                 "3. Hold the face for 10 seconds\n" +
+                 "4. Relax");
+            await Awaitable.WaitForSecondsAsync(Scaled(6f));
+        }
 
         BlockRole? currentPart = null;
-        foreach (var trial in Plan)
+        for (int index = 0; index < Plan.Count; ++index)
         {
+            var trial = Plan[index];
+
             // Name each part when it starts.
             if (trial.Role != currentPart)
             {
@@ -545,7 +612,7 @@ public class ProtocolRunner : MonoBehaviour
                         ? "Part 2\n\nNow make each expression again."
                         : "Make each expression as it is shown.") +
                       "\nYou will see what the system thinks.");
-                await Awaitable.WaitForSecondsAsync(Scaled(4f));
+                await Awaitable.WaitForSecondsAsync(Scaled(demoMode ? DemoPartSeconds : 4f));
             }
 
             // The profile is sealed on the way into the first evaluation trial, which is the
@@ -556,7 +623,15 @@ public class ProtocolRunner : MonoBehaviour
                 SealCalibration();
             }
 
-            await RunTrial(trial);
+            if (demoMode)
+            {
+                Emotion? next = index + 1 < Plan.Count ? Plan[index + 1].Emotion : null;
+                await RunDemoTrial(trial, next);
+            }
+            else
+            {
+                await RunTrial(trial);
+            }
         }
 
         // A plan with no evaluation block would otherwise finish unsealed, leaving the
@@ -566,7 +641,8 @@ public class ProtocolRunner : MonoBehaviour
             SealCalibration();
         }
 
-        Show("Session complete.\n\nThank you.\n\n" + TestResultsTable());
+        Show((demoMode ? "Demo complete.\n\nThank you.\n\n" : "Session complete.\n\nThank you.\n\n") +
+             TestResultsTable());
         Debug.Log($"{nameof(ProtocolRunner)}: session complete, {Plan.Count} trials recorded.");
 
         CloseSessionLogger();
@@ -694,9 +770,69 @@ public class ProtocolRunner : MonoBehaviour
         await Awaitable.WaitForSecondsAsync(Scaled(relaxSeconds));
     }
 
-    // Polls the model once a second for the hold period and logs every tick. In the test
-    // block it also shows each second's result and the running score.
-    private async Awaitable RecordTrial(PlannedTrial trial)
+    // The demo's trial: a get-ready countdown, the hold with the remaining-time bar, and in
+    // the test block the trial's predicted emotion. The recording itself is `RecordTrial`,
+    // exactly as in the study.
+    private async Awaitable RunDemoTrial(PlannedTrial trial, Emotion? next)
+    {
+        // 1. Get ready, counting down. Doubles as the relax period between trials.
+        for (int i = DemoGetReadySeconds; i > 0; --i)
+        {
+            ClearForDemoScreen();
+            demoScreen.ShowText($"{TrialCounter(trial)}\n\n" +
+                                "Relax yourself.\n" +
+                                $"Next emotion you will act is <color={DemoNextColor}>{trial.Emotion}</color>.\n" +
+                                $"Starting in {i}s.");
+            await Awaitable.WaitForSecondsAsync(Scaled(1f));
+        }
+
+        // 2. Hold. No live result and no score: the result comes after the trial.
+        ClearForDemoScreen();
+        float holdSeconds = fastRehearsal ? 3 : TicksPerTrial;
+        if (trial.Emotion == Emotion.Neutral)
+        {
+            demoScreen.ShowHold("Act Neutral", "Let your face rest.", DemoScreen.BodySize + 6f,
+                                "", holdSeconds);
+        }
+        else
+        {
+            // Three times the body text, so the emoji reads from a distance.
+            demoScreen.ShowHold($"Act {trial.Emotion}", EmotionToEmoji[trial.Emotion],
+                                3f * 24f, "Hold it", holdSeconds);
+        }
+
+        var predicted = await RecordTrial(trial);
+
+        // 3. Test block only: the emotion predicted most often over the trial's scored seconds
+        //    (calibrated when calibration is ready), and what comes next.
+        if (trial.Role != BlockRole.Evaluation)
+        {
+            return;
+        }
+
+        string headline = "Your face was not tracked in this trial.";
+        if (predicted.Scorable)
+        {
+            string color = predicted.ClassIndex == (int)trial.Emotion ? DemoCorrectColor : DemoWrongColor;
+            headline = "In this session, your predicted emotion was " +
+                       $"<color={color}>{ClassOrder[predicted.ClassIndex]}</color>";
+        }
+        string upcoming = next.HasValue
+            ? $"Your next acting emotion is <color={DemoNextColor}>{next.Value}</color>\n" +
+              "Prepare yourself"
+            : "That was the last emotion.\n" +
+              "Your results will be shown when the timer ends.";
+
+        ClearForDemoScreen();
+        demoScreen.ShowResult(headline, upcoming, Scaled(DemoResultSeconds));
+        await Awaitable.WaitForSecondsAsync(Scaled(DemoResultSeconds));
+    }
+
+    // Polls the model once a second for the hold period and logs every tick. In the study's
+    // test block it also shows each second's result and the running score. Returns the
+    // trial's majority vote as it was shown: calibrated when calibration is ready, the
+    // model's own otherwise.
+    private async Awaitable<TrialVote> RecordTrial(PlannedTrial trial)
     {
         int ticks = fastRehearsal ? 3 : TicksPerTrial;
 
@@ -778,8 +914,12 @@ public class ProtocolRunner : MonoBehaviour
                     }
                 }
 
-                string score = scoredSeconds > 0 ? $"\nScore: {correctSeconds}/{scoredSeconds}" : "";
-                Show($"{HoldScreen(trial.Emotion)}\n\nResult: {seen}{score}");
+                // The demo shows neither during the hold; its result comes after the trial.
+                if (!demoMode)
+                {
+                    string score = scoredSeconds > 0 ? $"\nScore: {correctSeconds}/{scoredSeconds}" : "";
+                    Show($"{HoldScreen(trial.Emotion)}\n\nResult: {seen}{score}");
+                }
             }
 
             // Logged whether or not tracking held, so a dropout is visible in the file
@@ -796,9 +936,12 @@ public class ProtocolRunner : MonoBehaviour
             }
         }
 
+        var rawVote = TrialMajority.Vote(rawVotes, ClassOrder.Length);
+        var calibratedVote = TrialMajority.Vote(calibratedVotes, ClassOrder.Length);
         sessionLogger?.LogTrial(trial.TrialId, trial.Role, trial.RepeatIndex, trial.Emotion,
-                                TrialMajority.Vote(rawVotes, ClassOrder.Length),
-                                TrialMajority.Vote(calibratedVotes, ClassOrder.Length));
+                                rawVote, calibratedVote);
+
+        return calibratedVote.Scorable ? calibratedVote : rawVote;
     }
 
     /// <summary>

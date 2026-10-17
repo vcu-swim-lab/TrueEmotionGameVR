@@ -42,7 +42,11 @@ want. Only one block may be uncommented. Save, then **Build and Run**.
 
 ## What to check, for every condition
 
-Watch the log while you test: `adb logcat -s Unity | grep -E "\[condition\]|\[game\]"`
+Watch the log while you test: `adb logcat -s Unity | grep -E "\[condition\]|\[game\]|\[Jev\]"`
+
+In conditions 3 and 4 the library also writes one line per Jev request, for example
+`[Jev] POST https://api.typesafe.ai/v1/systemone -> 200 in 412 ms (attempt 1 of 2)`. If you see these lines with
+`200`, Jev is really being called. They never contain the key.
 
 | Step | You should see |
 |---|---|

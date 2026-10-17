@@ -98,7 +98,13 @@ both never overwrites the other.
 
 **Privacy.** In conditions 3 and 4 the player's face-tracking numbers leave the device. Get consent.
 
-Step-by-step headset checks for each condition: `Docs/CONDITION_TEST_CHECKLIST.md`.
+Step-by-step headset checks for each condition: `Docs/CONDITION_TEST_CHECKLIST.md`. The files each condition
+writes, with every column, are in `Docs/OUTPUT_FILE_FORMATS.md`.
+
+**Library version.** The game uses VREmotionDetection 3.0.0 from the `jev_branch` branch
+(`packages-lock.json` pins the commit). Its types live in the namespace `VcuSwimLab.VREmotionDetection`, so
+every script that uses `NewFaceAuModel`, `Emotion` or `FacePrediction` needs
+`using VcuSwimLab.VREmotionDetection;`.
 
 
 ## 🧪 Study protocol (`Protocol Runner`)

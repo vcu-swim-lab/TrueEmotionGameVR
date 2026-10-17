@@ -6,6 +6,10 @@ using Unity.InferenceEngine;
 using UnityEngine;
 using UnityEngine.Android;
 using UnityEngine.InputSystem.XR.Haptics;
+
+using VcuSwimLab.Calibration;
+using VcuSwimLab.VREmotionDetection;
+
 using Random = UnityEngine.Random;
 
 
@@ -105,10 +109,13 @@ public class ProgressGame : MonoBehaviour
             };
             SessionLogger.AddFaceBackendInfo(modelInfo, predictor);
 
+            // recordCalibratedDecision: the game scores a calibrated round on the calibrated emotion, so
+            // the file carries that decision (blank when calibration is off or skipped).
             sessionLogger = new SessionLogger(
                 NewFaceAuModel.WindowFrames,
                 NewFaceAuModel.FeaturesPerFrame,
-                modelInfo);
+                modelInfo,
+                recordCalibratedDecision: true);
         }
         catch (System.Exception e)
         {
@@ -266,9 +273,14 @@ public class ProgressGame : MonoBehaviour
             // which matters when the backend is a web service.
             var outcome = await predictor.TryPredict();
 
+            // The calibration's decision for this tick: null when calibration is off, was skipped, or
+            // the tick failed. This is what the round is scored on when it exists.
+            NearestCentroid? decision = outcome.Ok ? predictor.CalibratedDecision(outcome.Prediction) : null;
+
             // Logged before scoring, and a failed prediction is recorded too (with its error
-            // code), so the CSV holds one row per tick whether or not it succeeded.
-            sessionLogger?.LogPrediction(trialId, emotion, i, outcome.PredictionOrNull, outcome.Error);
+            // code), so the CSV holds one row per tick whether or not it succeeded. The row keeps
+            // the model's own answer AND the calibrated decision, so the score can be reproduced.
+            sessionLogger?.LogPrediction(trialId, emotion, i, outcome.PredictionOrNull, decision, outcome.Error);
 
             if (outcome.Ok)
             {
@@ -276,7 +288,7 @@ public class ProgressGame : MonoBehaviour
                 // when the player calibrated, the backend's own answer otherwise. The confidence
                 // is the backend's score for that emotion (for Jev, its own raw answer).
                 var value = outcome.Prediction;
-                var predicted = predictor.CalibratedEmotion(value) ?? value.Emotion;
+                var predicted = decision.HasValue ? (Emotion)decision.Value.ClassIndex : value.Emotion;
                 float confidence = value.ScoreOf(predicted);
 
                 Debug.Log($"[game] round {trialId} {emotion} tick {i}: {predicted} " +
@@ -450,16 +462,20 @@ public class ProgressGame : MonoBehaviour
     }
 
     // Why the last calibration step failed, in words for the screen: the library's calibration
-    // error if it has one, otherwise the last prediction error (e.g. Jev Unreachable), otherwise
-    // lost face tracking.
+    // error and the last prediction error (e.g. Jev Unreachable), or lost face tracking when
+    // neither is known.
     private string CalibrationFailureReason()
     {
-        if (!string.IsNullOrEmpty(predictor.CalibrationError))
+        string last = predictor.LastError.HasValue ? predictor.LastError.Value.ToString() : null;
+
+        if (string.IsNullOrEmpty(predictor.CalibrationError))
         {
-            return predictor.CalibrationError;
+            return last ?? "face tracking was lost";
         }
 
-        return predictor.LastError.HasValue ? predictor.LastError.Value.ToString() : "face tracking was lost";
+        // The library's own explanation ("could not collect enough samples ... see LastError")
+        // points at the last prediction error for the concrete cause, so show both.
+        return last == null ? predictor.CalibrationError : $"{predictor.CalibrationError}\n{last}";
     }
 
 

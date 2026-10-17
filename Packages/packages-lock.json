@@ -265,11 +265,10 @@
         "com.meta.xr.sdk.core": "77.0.0",
         "com.unity.xr.openxr": "1.15.0",
         "com.unity.nuget.newtonsoft-json": "3.2.1",
-        "com.unity.modules.audio": "1.0.0",
         "com.unity.modules.jsonserialize": "1.0.0",
         "com.unity.modules.unitywebrequest": "1.0.0"
       },
-      "hash": "2cca386c3e067b3b24c63ecacdfde6b37f1ba535"
+      "hash": "1ab541e8ba9c96d3aad3dbed7aed631e26e8bae7"
     },
     "com.unity.modules.accessibility": {
       "version": "1.0.0",

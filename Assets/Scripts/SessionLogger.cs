@@ -8,6 +8,7 @@ using UnityEngine;
 
 using VcuSwimLab.Backends;
 using VcuSwimLab.Calibration;
+using VcuSwimLab.VREmotionDetection;
 
 // Writes one self-contained CSV row per face prediction, plus a metadata sidecar
 // describing the session.
@@ -71,6 +72,21 @@ public sealed class SessionLogger : IDisposable
     // recording rather than one to be inferred from missing columns.
     private readonly CalibrationSessionConfig calibration;
 
+    // The scored game has no `calibration` object (no blocks, no trials.csv), but in the calibrated
+    // conditions it scores a round on the calibrated emotion, which the model's own `predicted_emotion`
+    // does not show. When this is on, the game's rows end with the four columns below, named as in the
+    // study, so the same analysis reads both. Always present in the game (blank when calibration is off
+    // or skipped), so every condition of the game has one schema.
+    private readonly bool recordCalibratedDecision;
+
+    private static readonly string[] CalibratedDecisionColumns =
+    {
+        "calibrated_predicted_emotion",
+        "calibrated_winner_similarity",
+        "calibrated_runner_up_similarity",
+        "calibrated_margin",
+    };
+
     // Only known once the calibration block closes, so the metadata is rewritten then.
     private readonly DateTime startedUtc;
     private readonly IReadOnlyDictionary<string, string> modelInfo;
@@ -97,12 +113,14 @@ public sealed class SessionLogger : IDisposable
         int featuresPerFrame,
         IReadOnlyDictionary<string, string> modelInfo,
         IReadOnlyDictionary<string, string> sessionInfo = null,
-        CalibrationSessionConfig calibration = null)
+        CalibrationSessionConfig calibration = null,
+        bool recordCalibratedDecision = false)
     {
         this.windowFrames = windowFrames;
         this.featuresPerFrame = featuresPerFrame;
         this.sessionInfo = sessionInfo;
         this.calibration = calibration;
+        this.recordCalibratedDecision = recordCalibratedDecision;
         this.modelInfo = modelInfo;
 
         var startedUtc = DateTime.UtcNow;
@@ -184,6 +202,14 @@ public sealed class SessionLogger : IDisposable
             sb.Append(',').Append(column);
         }
 
+        if (calibration == null && recordCalibratedDecision)
+        {
+            foreach (string column in CalibratedDecisionColumns)
+            {
+                sb.Append(',').Append(column);
+            }
+        }
+
         // Always last, after the calibration columns, for the same reason: appended, so no
         // existing column moves. Which backend scored the row, why it failed if it did, and
         // the backend's own answers before any normalisation (Jev; blank for SparseVR).
@@ -255,10 +281,15 @@ public sealed class SessionLogger : IDisposable
     // scored game. `block_role` and `repeat_index` are left empty rather than guessed, so an
     // analysis that splits on them refuses the file outright instead of silently treating a
     // game recording as study data.
+    //
+    // `calibrated` is the calibration's decision for the tick (the library's CalibratedDecision), or
+    // null when calibration is off, was skipped, or the tick failed; it is written to the four
+    // calibrated-decision columns, so the game's score can be reproduced from the file.
     public void LogPrediction(int trialId, Emotion promptedEmotion, int predictionIndex,
-                              FacePrediction? prediction, PredictionError? error = null)
+                              FacePrediction? prediction, NearestCentroid? calibrated = null,
+                              PredictionError? error = null)
         => LogRow(trialId, string.Empty, string.Empty,
-                  promptedEmotion, predictionIndex, prediction, null, error);
+                  promptedEmotion, predictionIndex, prediction, calibrated, error);
 
     // What a session's metadata says about which condition produced the predictions. Both game
     // scripts call this instead of each spelling it out. Everything is read from the predictor
@@ -326,6 +357,7 @@ public sealed class SessionLogger : IDisposable
                 // still belongs to a session that was configured one way. Only the per-tick
                 // decision is missing, and it is missing because there was nothing to decide.
                 AppendCalibration(null, null);
+                AppendDecision(null);
                 AppendBackend(error?.BackendId, error, null);
 
                 writer.WriteLine(row.ToString());
@@ -373,6 +405,7 @@ public sealed class SessionLogger : IDisposable
             }
 
             AppendCalibration(value.Emotion, calibrated);
+            AppendDecision(calibrated);
             AppendBackend(value.BackendId, null, value.Raw);
 
             writer.WriteLine(row.ToString());
@@ -381,6 +414,31 @@ public sealed class SessionLogger : IDisposable
         {
             // Logging must never take the game down mid-session.
             Debug.LogError($"SessionLogger: failed to write row ({e.GetType().Name}: {e.Message})");
+        }
+    }
+
+    // The game's four calibrated-decision columns. Nothing when the session is a study session (its
+    // wider calibration tail carries the decision) or the game's columns are off. Blank, not the model's
+    // own answer repeated, when there is no decision: an uncalibrated tick must never read as one the
+    // calibration happened to agree with.
+    private void AppendDecision(NearestCentroid? calibrated)
+    {
+        if (calibration != null || !recordCalibratedDecision)
+        {
+            return;
+        }
+
+        if (calibrated.HasValue)
+        {
+            var decision = calibrated.Value;
+            row.Append(',').Append(Escape(ClassOrder[decision.ClassIndex].ToString()));
+            row.Append(',').Append(Format(decision.WinnerSimilarity));
+            row.Append(',').Append(Format(decision.RunnerUpSimilarity));
+            row.Append(',').Append(Format(decision.Margin));
+        }
+        else
+        {
+            row.Append(",,,,");
         }
     }
 
@@ -619,6 +677,13 @@ public sealed class SessionLogger : IDisposable
                 sb.AppendLine("    \"calibrated_margin\": \"winner minus runner-up; a small value marks a tick that nearly went the other way\",");
                 sb.AppendLine("    \"calibration_valid\": \"true once a usable profile was sealed; blank on calibration-block rows, which were written before the seal\",");
                 sb.AppendLine("    \"calibration_error\": \"why the profile is unusable, empty when it is fine\",");
+            }
+            else if (recordCalibratedDecision)
+            {
+                sb.AppendLine("    \"calibrated_predicted_emotion\": \"the calibration's decision for the tick (what the game scored in the calibrated conditions); blank when calibration is off or was skipped, and on a failed tick. predicted_emotion and correct are always the model's own answer\",");
+                sb.AppendLine("    \"calibrated_winner_similarity\": \"sum of the score and movement cosines of the winning emotion (0 to 2)\",");
+                sb.AppendLine("    \"calibrated_runner_up_similarity\": \"the same sum for the second-placed emotion\",");
+                sb.AppendLine("    \"calibrated_margin\": \"winner minus runner-up; a small value marks a tick that nearly went the other way\",");
             }
             sb.AppendLine("    \"backend_id\": \"the library's id of the backend that scored the row (the model asset's name for SparseVR, jev:<model>:p<prompt version> for Jev)\",");
             sb.AppendLine("    \"error_code\": \"the library's PredictionErrorCode when the row failed, empty otherwise\",");

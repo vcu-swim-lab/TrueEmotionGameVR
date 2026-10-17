@@ -6,6 +6,7 @@ using TMPro;
 using UnityEngine;
 
 using VcuSwimLab.Calibration;
+using VcuSwimLab.VREmotionDetection;
 
 using Random = System.Random;
 

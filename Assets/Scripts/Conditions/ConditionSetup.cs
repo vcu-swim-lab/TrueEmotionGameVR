@@ -5,6 +5,7 @@ using UnityEngine;
 using VcuSwimLab.Backends;
 using VcuSwimLab.Backends.Jev;
 using VcuSwimLab.Calibration;
+using VcuSwimLab.VREmotionDetection;
 
 using Debug = UnityEngine.Debug;
 
@@ -38,6 +39,11 @@ public static class ConditionSetup
     // fails every time. A round asks once a second, so the game uses a shorter wait.
     private const float JevTimeoutSeconds = 5f;
     private const int JevMaxRetries = 1;
+
+    // The library writes one Console line per Jev request -- "[Jev] POST <url> -> 200 in 412 ms
+    // (attempt 1 of 2)" -- without the key. On the headset (adb logcat -s Unity) it is the plain
+    // proof that conditions 3 and 4 really call Jev, and how fast. Set false for quiet logs.
+    private const bool JevLogRequests = true;
 
     // ---- The key file -----------------------------------------------------------------------
     // Assets/Resources/jev_api_key.txt, loaded with Resources.Load, so it is part of the build and
@@ -312,6 +318,7 @@ public static class ConditionSetup
 
             options.TimeoutSeconds = JevTimeoutSeconds;
             options.MaxRetries = JevMaxRetries;
+            options.LogRequests = JevLogRequests;
             options.SendOwnFacesInRequest = sendOwnFaces;
             return options;
         }

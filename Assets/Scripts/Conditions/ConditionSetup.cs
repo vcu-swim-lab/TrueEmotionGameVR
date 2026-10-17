@@ -10,10 +10,10 @@ using Debug = UnityEngine.Debug;
 
 // Chooses which of the four experiment conditions this build runs.
 //
-//   Condition 1   SparseVR (on the headset), calibration OFF     <- active in the committed code
+//   Condition 1   SparseVR (on the headset), calibration OFF
 //   Condition 2   SparseVR (on the headset), calibration ON
 //   Condition 3   Jev (Typesafe's cloud model), calibration OFF
-//   Condition 4   Jev (Typesafe's cloud model), calibration ON
+//   Condition 4   Jev (Typesafe's cloud model), calibration ON   <- active in the committed code
 //
 // HOW TO TEST A CONDITION
 //   1. In `Configure` below, put `//` in front of every line of the block that is active now.
@@ -82,8 +82,8 @@ public static class ConditionSetup
             // >>> UNCOMMENT EXACTLY ONE of the four blocks below. >>>
 
             // ===== CONDITION 1: SparseVR, calibration OFF =====================================
-            predictor.UseSparseVr();             // the ONNX model that ships in the package, on the headset
-            predictor.UseCalibration = false;    // predictions are the model's own answer
+            // predictor.UseSparseVr();             // the ONNX model that ships in the package, on the headset
+            // predictor.UseCalibration = false;    // predictions are the model's own answer
 
             // ===== CONDITION 2: SparseVR, calibration ON ======================================
             // predictor.UseSparseVr();             // same model as condition 1
@@ -95,9 +95,9 @@ public static class ConditionSetup
             // predictor.UseCalibration = false;    // Jev's own answer
 
             // ===== CONDITION 4: Jev, calibration ON ===========================================
-            // jevOptions = BuildJevOptions(sendOwnFaces: false);   // true = also tell Jev how this player makes each face
-            // if (jevOptions != null) predictor.UseJev(jevOptions);   // same backend as condition 3
-            // predictor.UseCalibration = true;     // calibration is collected from JEV's scores: about 70 requests
+            jevOptions = BuildJevOptions(sendOwnFaces: false);   // true = also tell Jev how this player makes each face
+            if (jevOptions != null) predictor.UseJev(jevOptions);   // same backend as condition 3
+            predictor.UseCalibration = true;     // calibration is collected from JEV's scores: about 70 requests
 
             // <<< end of the four blocks <<<
 

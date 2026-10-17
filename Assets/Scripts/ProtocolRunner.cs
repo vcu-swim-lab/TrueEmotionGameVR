@@ -53,27 +53,25 @@ public class ProtocolRunner : MonoBehaviour
     public const string ProtocolVersion = "session-local-v3";
 
     // The demo (the Demo checkbox) is a separate flow for showing the system to viewers, not a
-    // study session: one test pass, a get-ready countdown, a remaining-time bar and the trial's
-    // predicted emotion after each test trial. Its recordings carry this version instead, so
-    // they are never pooled with study recordings.
-    public const string DemoProtocolVersion = "demo-v1";
+    // study session: one test pass, a remaining-time bar during the hold, and after each test
+    // trial its predicted emotion with the next emotion and a circle countdown. Its recordings
+    // carry this version instead, so they are never pooled with study recordings.
+    // `demo-v2` (2026-10-17): the result screen also announces the next trial and counts down
+    // to it, so the separate get-ready screen is left only before trials that follow no result.
+    public const string DemoProtocolVersion = "demo-v2";
 
     public const int CalibrationPasses = 1;   // K block: 7 trials
     public const int EvaluationPasses = 2;    // D block: 14 trials
     public const int DemoEvaluationPasses = 1; // demo test block: 7 trials
     public const int TicksPerTrial = 10;
 
-    // Demo screen lengths, in seconds. Longer than the study's, so viewers can read them.
-    private const float DemoIntroSeconds = 10f;
-    private const float DemoPartSeconds = 6f;
-    private const int DemoGetReadySeconds = 5;
-    private const float DemoResultSeconds = 10f;
 
     // Demo text colours, on the emotion word only: the predicted emotion when it matches the
-    // acted one and when it does not, and the next emotion.
+    // acted one and when it does not, and the next emotion. Grey for the trial counter.
     private const string DemoCorrectColor = "#9BE15D";
     private const string DemoWrongColor = "#FF5A5A";
     private const string DemoNextColor = "#FFF04D";
+    private const string DemoCounterColor = "#969BA5";
 
     [Header("Scene")]
     [Tooltip("The instruction text. Left empty, the object named 'Instruction' is used.")]
@@ -96,9 +94,28 @@ public class ProtocolRunner : MonoBehaviour
 
     [Header("Demo")]
     [Tooltip("Runs the demo instead of the study: each emotion once after calibration, a " +
-             "get-ready countdown, a remaining-time bar and the predicted emotion after each " +
-             "trial. Recordings are marked as demo and must not be analysed with study data.")]
+             "remaining-time bar while acting and the predicted emotion after each trial, " +
+             "with a countdown to the next. Recordings are marked as demo and must not be " +
+             "analysed with study data.")]
     [SerializeField] private bool demoMode = false;
+
+    // Demo screen lengths, in seconds. Longer than the study's, so viewers can read them. The
+    // acting itself stays 10 s: it is the recording, the same as the study's.
+    [Tooltip("The start screen.")]
+    [SerializeField, Min(0f)] private float demoIntroSeconds = 10f;
+    [Tooltip("The \"Part 1: Calibration\" and \"Part 2\" screens.")]
+    [SerializeField, Min(0f)] private float demoPartSeconds = 6f;
+    [Tooltip("Every get-ready and result screen: how long its text is shown before the " +
+             "circle countdown appears.")]
+    [SerializeField, Min(0f)] private float demoReadSeconds = 5f;
+    [Tooltip("The circle countdown, one number a second, at the end of every get-ready and " +
+             "result screen.")]
+    [SerializeField, Min(1)] private int demoCountdownSeconds = 5;
+
+    [Tooltip("Saves the 70 face tracking values every frame to face_tracking.csv in the " +
+             "session folder, from the first get-ready screen to the end screen, for replaying " +
+             "the face on an avatar afterwards. Demo only.")]
+    [SerializeField] private bool saveFaceTracking = false;
 
     [Header("Calibration")]
     [Tooltip("Whether the session calibrates is the \"Use Calibration\" checkbox on the New Face " +
@@ -182,6 +199,23 @@ public class ProtocolRunner : MonoBehaviour
         return table.Append("</mspace>").ToString();
     }
 
+    // The demo's end screen: one row per test trial, acted emotion and predicted emotion, the
+    // prediction green when it matches and red when it does not.
+    private string DemoResultsTable()
+    {
+        var table = new StringBuilder("<mspace=0.6em>");
+        table.Append($"{"Target",-11}{"Predicted",-11}");
+        foreach (var (target, predicted) in demoResults)
+        {
+            string shown = predicted.Scorable
+                ? $"<color={(predicted.ClassIndex == (int)target ? DemoCorrectColor : DemoWrongColor)}>" +
+                  $"{ClassOrder[predicted.ClassIndex],-11}</color>"
+                : $"<color={DemoCounterColor}>{"-",-11}</color>";
+            table.Append($"\n{target,-11}{shown}");
+        }
+        return table.Append("</mspace>").ToString();
+    }
+
     // One prompt, resolved before the session starts so the whole schedule is fixed and
     // recordable in advance rather than decided trial by trial.
     public readonly struct PlannedTrial
@@ -216,6 +250,10 @@ public class ProtocolRunner : MonoBehaviour
     // the prompted emotion, and scored seconds shown. The same counts as the hold screen's score.
     private readonly int[] testCorrect = new int[ClassOrder.Length];
     private readonly int[] testSeconds = new int[ClassOrder.Length];
+
+    // The demo's test trials in the order acted: the acted emotion and its predicted emotion,
+    // for the end screen.
+    private readonly List<(Emotion Target, TrialVote Predicted)> demoResults = new();
 
     public IReadOnlyList<PlannedTrial> Plan { get; private set; }
 
@@ -268,6 +306,11 @@ public class ProtocolRunner : MonoBehaviour
     private int EvaluationPassesThisSession => demoMode ? DemoEvaluationPasses : EvaluationPasses;
 
     void Update() => demoScreen?.Tick();
+
+    // After every Update, so the face tracking has already been read this frame.
+    void LateUpdate() => faceRecorder?.RecordFrame();
+
+    private bool SavingFaceTracking => demoMode && saveFaceTracking;
 
     // The calibration block, then the evaluation block, each a sequence of shuffled passes
     // over all seven states. Resolved up front so the whole schedule is fixed and recordable
@@ -408,6 +451,7 @@ public class ProtocolRunner : MonoBehaviour
             if (demoMode)
             {
                 sessionInfo["demo"] = "true";
+                sessionInfo["face_tracking_saved"] = SavingFaceTracking ? "true" : "false";
             }
 
             sessionLogger = new SessionLogger(
@@ -432,6 +476,33 @@ public class ProtocolRunner : MonoBehaviour
     {
         sessionLogger?.Dispose();
         sessionLogger = null;
+        faceRecorder?.Dispose();
+        faceRecorder = null;
+    }
+
+    // The demo's face tracking file, when Save Face Tracking is on.
+    private FaceTrackingRecorder faceRecorder;
+
+    private void StartFaceRecorder()
+    {
+        if (!SavingFaceTracking)
+        {
+            return;
+        }
+
+        try
+        {
+            faceRecorder = new FaceTrackingRecorder(GetComponent<OVRFaceExpressions>(),
+                                                    sessionLogger.SessionDirectory);
+            Debug.Log($"{nameof(ProtocolRunner)}: saving face tracking to {faceRecorder.Path}");
+        }
+        catch (Exception e)
+        {
+            // The demo runs on without it: the face file is for the video, not the recording.
+            faceRecorder = null;
+            Debug.LogError($"{nameof(ProtocolRunner)}: could not save face tracking " +
+                           $"({e.GetType().Name}: {e.Message}). The demo continues without it.");
+        }
     }
 
     // The Quest pauses rather than quits when the headset comes off mid-session.
@@ -579,13 +650,15 @@ public class ProtocolRunner : MonoBehaviour
         // that the operator's note is written at the same moment the session starts.
         Debug.Log($"{nameof(ProtocolRunner)}: recording to {sessionLogger.SessionDirectory}");
 
+        StartFaceRecorder();
+
         if (demoMode)
         {
             Show("Each trial:\n" +
-                 "1. Get ready (5 seconds)\n" +
-                 "2. Act the emotion shown (10 seconds)\n" +
-                 "3. See the emotion the system predicted");
-            await Awaitable.WaitForSecondsAsync(Scaled(DemoIntroSeconds));
+                 "1. Act the emotion shown (10 s)\n" +
+                 "2. See what the system predicted\n" +
+                 "3. Get ready for the next one");
+            await Awaitable.WaitForSecondsAsync(Scaled(demoIntroSeconds));
         }
         else
         {
@@ -612,7 +685,8 @@ public class ProtocolRunner : MonoBehaviour
                         ? "Part 2\n\nNow make each expression again."
                         : "Make each expression as it is shown.") +
                       "\nYou will see what the system thinks.");
-                await Awaitable.WaitForSecondsAsync(Scaled(demoMode ? DemoPartSeconds : 4f));
+                faceRecorder?.SetScreen("part");
+                await Awaitable.WaitForSecondsAsync(Scaled(demoMode ? demoPartSeconds : 4f));
             }
 
             // The profile is sealed on the way into the first evaluation trial, which is the
@@ -625,8 +699,11 @@ public class ProtocolRunner : MonoBehaviour
 
             if (demoMode)
             {
-                Emotion? next = index + 1 < Plan.Count ? Plan[index + 1].Emotion : null;
-                await RunDemoTrial(trial, next);
+                // A test trial's result screen counts down to the next trial, so a get-ready
+                // screen is needed only where no result screen came just before.
+                bool getReady = index == 0 || Plan[index - 1].Role != BlockRole.Evaluation;
+                PlannedTrial? next = index + 1 < Plan.Count ? Plan[index + 1] : null;
+                await RunDemoTrial(trial, next, getReady);
             }
             else
             {
@@ -641,8 +718,9 @@ public class ProtocolRunner : MonoBehaviour
             SealCalibration();
         }
 
-        Show((demoMode ? "Demo complete.\n\nThank you.\n\n" : "Session complete.\n\nThank you.\n\n") +
-             TestResultsTable());
+        Show(demoMode
+            ? "Demo complete. Thank you.\n\n" + DemoResultsTable()
+            : "Session complete.\n\nThank you.\n\n" + TestResultsTable());
         Debug.Log($"{nameof(ProtocolRunner)}: session complete, {Plan.Count} trials recorded.");
 
         CloseSessionLogger();
@@ -770,20 +848,26 @@ public class ProtocolRunner : MonoBehaviour
         await Awaitable.WaitForSecondsAsync(Scaled(relaxSeconds));
     }
 
-    // The demo's trial: a get-ready countdown, the hold with the remaining-time bar, and in
-    // the test block the trial's predicted emotion. The recording itself is `RecordTrial`,
-    // exactly as in the study.
-    private async Awaitable RunDemoTrial(PlannedTrial trial, Emotion? next)
+    // The demo's trial: a get-ready countdown when no result screen came before it, the hold
+    // with the remaining-time bar, and in the test block the trial's predicted emotion with a
+    // countdown to the next trial. The recording itself is `RecordTrial`, exactly as in the study.
+    private async Awaitable RunDemoTrial(PlannedTrial trial, PlannedTrial? next, bool getReady)
     {
-        // 1. Get ready, counting down. Doubles as the relax period between trials.
-        for (int i = DemoGetReadySeconds; i > 0; --i)
+        // 1. Get ready: time to read and relax, then the countdown. Doubles as the relax
+        //    period before the trial.
+        if (getReady)
         {
+            float lead = Scaled(demoReadSeconds);
             ClearForDemoScreen();
-            demoScreen.ShowText($"{TrialCounter(trial)}\n\n" +
-                                "Relax yourself.\n" +
-                                $"Next emotion you will act is <color={DemoNextColor}>{trial.Emotion}</color>.\n" +
-                                $"Starting in {i}s.");
-            await Awaitable.WaitForSecondsAsync(Scaled(1f));
+            // The face file's time 0 is the first of these screens.
+            faceRecorder?.Begin();
+            faceRecorder?.SetScreen("get_ready", trial.TrialId, trial.Emotion.ToString());
+            demoScreen.ShowCountdown($"<color={DemoCounterColor}>{TrialCounter(trial)}</color>",
+                                     DemoScreen.GetReadySize,
+                                     $"Relax yourself.\nNext: <color={DemoNextColor}>{trial.Emotion}</color>",
+                                     DemoScreen.GetReadySize,
+                                     "Starts in", demoCountdownSeconds, Scaled(demoCountdownSeconds), lead);
+            await Awaitable.WaitForSecondsAsync(lead + Scaled(demoCountdownSeconds));
         }
 
         // 2. Hold. No live result and no score: the result comes after the trial.
@@ -801,31 +885,44 @@ public class ProtocolRunner : MonoBehaviour
                                 3f * 24f, "Hold it", holdSeconds);
         }
 
+        faceRecorder?.SetScreen("act", trial.TrialId, trial.Emotion.ToString());
         var predicted = await RecordTrial(trial);
 
         // 3. Test block only: the emotion predicted most often over the trial's scored seconds
-        //    (calibrated when calibration is ready), and what comes next.
+        //    (calibrated when calibration is ready), what comes next, and a countdown to it --
+        //    to the next trial, or to the end screen after the last.
         if (trial.Role != BlockRole.Evaluation)
         {
             return;
         }
 
-        string headline = "Your face was not tracked in this trial.";
+        demoResults.Add((trial.Emotion, predicted));
+
+        string headline = "In this trial,\nyour face was not tracked.";
         if (predicted.Scorable)
         {
             string color = predicted.ClassIndex == (int)trial.Emotion ? DemoCorrectColor : DemoWrongColor;
-            headline = "In this session, your predicted emotion was " +
+            headline = "In this trial,\nyour predicted emotion was " +
                        $"<color={color}>{ClassOrder[predicted.ClassIndex]}</color>";
         }
-        string upcoming = next.HasValue
-            ? $"Your next acting emotion is <color={DemoNextColor}>{next.Value}</color>\n" +
-              "Prepare yourself"
-            : "That was the last emotion.\n" +
-              "Your results will be shown when the timer ends.";
 
+        string upcoming = "That was the last one.";
+        string label = "Results in";
+        if (next.HasValue)
+        {
+            string counter = TrialCounter(next.Value);
+            upcoming = $"Next: <color={DemoNextColor}>{next.Value.Emotion}</color> " +
+                       $"<color={DemoCounterColor}>({char.ToLower(counter[0])}{counter.Substring(1)})</color>";
+            label = "Starts in";
+        }
+
+        // Time to read first (5 s by default), then "Starts in" and the circle (5 s).
+        float readSeconds = Scaled(demoReadSeconds);
         ClearForDemoScreen();
-        demoScreen.ShowResult(headline, upcoming, Scaled(DemoResultSeconds));
-        await Awaitable.WaitForSecondsAsync(Scaled(DemoResultSeconds));
+        faceRecorder?.SetScreen("result", trial.TrialId, trial.Emotion.ToString());
+        demoScreen.ShowCountdown(headline, DemoScreen.HeadlineSize, upcoming, DemoScreen.BodySize,
+                                 label, demoCountdownSeconds, Scaled(demoCountdownSeconds), readSeconds);
+        await Awaitable.WaitForSecondsAsync(readSeconds + Scaled(demoCountdownSeconds));
     }
 
     // Polls the model once a second for the hold period and logs every tick. In the study's

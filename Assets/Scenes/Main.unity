@@ -776,7 +776,7 @@ RectTransform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 964688070}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 175}
+  m_LocalPosition: {x: 0, y: 0, z: 250}
   m_LocalScale: {x: 0.44782612, y: 0.44782612, z: 0.44782612}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -871,7 +871,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   faceModel: {fileID: 5022602860645237092, guid: c8c2538830cca7d42b35813f72fa93bf, type: 3}
   useCalibration: 0
-  saveResults: 0
+  saveResults: 1
 --- !u!114 &964688081
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -892,6 +892,11 @@ MonoBehaviour:
   randomizationSeed: 0
   fastRehearsal: 0
   demoMode: 1
+  demoIntroSeconds: 10
+  demoPartSeconds: 6
+  demoReadSeconds: 5
+  demoCountdownSeconds: 5
+  saveFaceTracking: 1
   calibrationDebugLogging: 0
 --- !u!1 &1066909192
 GameObject:

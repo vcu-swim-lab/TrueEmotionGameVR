@@ -2,15 +2,16 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-// The demo's screens (ProtocolRunner's Demo checkbox): a title, a large centre text (the
-// emoji), a line under it and a remaining-time bar. Built at run time as copies of the scene's
+// The demo's screens (ProtocolRunner's Demo checkbox): a title, a centre text, a line under
+// it, and either a remaining-time bar (the hold) or a circle countdown (between trials). Built at run time as copies of the scene's
 // instruction text -- same font, emoji sprites and render layer -- so the demo needs no scene
 // changes and the study's own screens are left exactly as they are.
 public class DemoScreen
 {
     // Canvas units. The canvas is 800 x 447 with its origin at the centre; the content is
     // kept within about +-120 of it, so it stays near eye level.
-    private const float TextWidth = 700f;
+    // Narrow, so no line is wide enough to need a head turn to read.
+    private const float TextWidth = 480f;
     private const float TextHeight = 100f;
     private const float BarWidth = 420f;
     private const float BarHeight = 22f;
@@ -21,12 +22,22 @@ public class DemoScreen
     private static readonly Color BarBackColor = Color.black;
     private static readonly Color BarFillColor = new Color(0.18f, 0.49f, 0.20f);
 
+    // The circle countdown: a number inside a ring that empties once a second, green for the
+    // part of the second left, dark grey for the part gone.
+    private const float RingSize = 60f;
+    private const float RingNumberSize = 26f;
+    private const int RingTexture = 128;
+    private const float RingThickness = 0.23f; // of the radius
+    private static readonly Color RingBackColor = new Color32(0x3C, 0x40, 0x4A, 0xFF);
+    private static readonly Color RingFillColor = new Color32(0x2E, 0xA0, 0x46, 0xFF);
+
     // The canvas background during the demo (the study keeps the scene's grey).
     private static readonly Color BackgroundColor = new Color32(0x14, 0x16, 0x1C, 0xFF);
 
     public const float BodySize = 22f;
+    public const float GetReadySize = 26f;
+    public const float HeadlineSize = 28f;
     private const float TitleSize = 30f;
-    private const float HeadlineSize = 28f;
 
     private readonly GameObject root;
     private readonly TextMeshProUGUI title;
@@ -34,10 +45,19 @@ public class DemoScreen
     private readonly TextMeshProUGUI below;
     private readonly RectTransform bar;
     private readonly RectTransform barFill;
+    private readonly GameObject ring;
+    private readonly Image ringFill;
+    private readonly TextMeshProUGUI ringNumber;
 
     private float timerStart;
     private float timerLength;
     private bool timerRunning;
+
+    private float countdownStart;
+    private float countdownStep;
+    private int countdownFrom;
+    private bool countdownRunning;
+    private string countdownLabel = "";
 
     public DemoScreen(TextMeshProUGUI template)
     {
@@ -78,6 +98,31 @@ public class DemoScreen
         barFill.offsetMin = barFill.offsetMax = Vector2.zero;
         AddImage(barFill.gameObject, BarFillColor);
 
+        var ringSprite = RingSprite();
+        var ringRect = NewUiObject("DemoCountdown", root.transform, layer).GetComponent<RectTransform>();
+        Center(ringRect, 0f, new Vector2(RingSize, RingSize));
+        AddImage(ringRect.gameObject, RingBackColor).sprite = ringSprite;
+        ring = ringRect.gameObject;
+
+        var fillRect = NewUiObject("Fill", ringRect, layer).GetComponent<RectTransform>();
+        fillRect.anchorMin = Vector2.zero;
+        fillRect.anchorMax = Vector2.one;
+        fillRect.offsetMin = fillRect.offsetMax = Vector2.zero;
+        ringFill = AddImage(fillRect.gameObject, RingFillColor);
+        ringFill.sprite = ringSprite;
+        ringFill.type = Image.Type.Filled;
+        ringFill.fillMethod = Image.FillMethod.Radial360;
+        ringFill.fillOrigin = (int)Image.Origin360.Top;
+        // Anticlockwise from the top, so as it shrinks the gone part grows clockwise.
+        ringFill.fillClockwise = false;
+
+        ringNumber = Object.Instantiate(template, ringRect);
+        ringNumber.name = "Number";
+        Center(ringNumber.rectTransform, 0f, new Vector2(RingSize, RingSize));
+        ringNumber.fontSize = RingNumberSize;
+        ringNumber.alignment = TextAlignmentOptions.Center;
+        ringNumber.text = "";
+
         Hide();
     }
 
@@ -89,46 +134,78 @@ public class DemoScreen
         Set(title, 95f, TitleSize, titleText);
         Set(center, 20f, centerSize, centerText);
         Set(below, -45f, BodySize, belowText);
+        HideCountdown();
         ShowBar(-85f, seconds);
         root.SetActive(true);
     }
 
-    // A text-only screen, centred, with no bar.
-    public void ShowText(string text)
+    // Between trials: a title, a text under it, a label ("Starts in") and the circle
+    // counting down from `count`, one number per `seconds / count`. With a `lead`, the label
+    // and the circle appear only after it, so there is time to read first; the text stays put.
+    public void ShowCountdown(string titleText, float titleSize, string centerText, float centerSize,
+                              string label, int count, float seconds, float lead = 0f)
     {
-        Set(title, 0f, BodySize, "");
-        Set(center, 0f, BodySize, text);
-        Set(below, 0f, BodySize, "");
+        Set(title, 95f, titleSize, titleText);
+        Set(center, 15f, centerSize, centerText);
+        Set(below, -40f, BodySize, "");
+        countdownLabel = label;
         HideBar();
-        root.SetActive(true);
-    }
-
-    // A headline, a smaller text under it and the remaining-time bar at the bottom.
-    public void ShowResult(string headline, string belowText, float seconds)
-    {
-        Set(title, 60f, HeadlineSize, headline);
-        Set(center, 0f, BodySize, "");
-        Set(below, -35f, BodySize, belowText);
-        ShowBar(-105f, seconds);
+        ShowRing(-100f, count, seconds, lead);
         root.SetActive(true);
     }
 
     public void Hide()
     {
         HideBar();
+        HideCountdown();
         root.SetActive(false);
     }
 
-    // Called every frame; drains the bar from the left as the time runs out.
+    // Called every frame: drains the bar from the left as the time runs out, and runs the
+    // circle -- each number's ring empties over its second, then the next number shows.
     public void Tick()
     {
-        if (!timerRunning)
+        if (timerRunning)
         {
-            return;
+            float left = 1f - Mathf.Clamp01((Time.time - timerStart) / timerLength);
+            barFill.anchorMin = new Vector2(1f - left, 0f);
         }
 
-        float left = 1f - Mathf.Clamp01((Time.time - timerStart) / timerLength);
-        barFill.anchorMin = new Vector2(1f - left, 0f);
+        if (countdownRunning)
+        {
+            if (Time.time < countdownStart)
+            {
+                return;
+            }
+
+            if (!ring.activeSelf)
+            {
+                below.text = countdownLabel;
+                ring.SetActive(true);
+            }
+
+            float steps = (Time.time - countdownStart) / countdownStep;
+            int done = Mathf.Min(Mathf.FloorToInt(steps), countdownFrom - 1);
+            ringNumber.text = (countdownFrom - done).ToString();
+            ringFill.fillAmount = Mathf.Clamp01(1f - (steps - done));
+        }
+    }
+
+    private void ShowRing(float y, int count, float seconds, float lead)
+    {
+        ((RectTransform)ring.transform).anchoredPosition = new Vector2(0f, y);
+        ring.SetActive(false);
+        countdownStart = Time.time + Mathf.Max(lead, 0f);
+        countdownFrom = Mathf.Max(count, 1);
+        countdownStep = Mathf.Max(seconds, 0.01f) / countdownFrom;
+        countdownRunning = true;
+        Tick();
+    }
+
+    private void HideCountdown()
+    {
+        countdownRunning = false;
+        ring.SetActive(false);
     }
 
     private void ShowBar(float y, float seconds)
@@ -178,10 +255,37 @@ public class DemoScreen
         return go;
     }
 
-    private static void AddImage(GameObject go, Color color)
+    private static Image AddImage(GameObject go, Color color)
     {
         var image = go.AddComponent<Image>();
         image.color = color;
         image.raycastTarget = false;
+        return image;
+    }
+
+    // A white ring with a soft edge, drawn once at start-up; the Images tint it.
+    private static Sprite RingSprite()
+    {
+        var texture = new Texture2D(RingTexture, RingTexture, TextureFormat.RGBA32, false)
+        {
+            wrapMode = TextureWrapMode.Clamp,
+            filterMode = FilterMode.Bilinear,
+        };
+        float half = RingTexture / 2f;
+        float outer = half - 1f;
+        float inner = outer * (1f - RingThickness);
+        var pixels = new Color32[RingTexture * RingTexture];
+        for (int y = 0; y < RingTexture; ++y)
+        {
+            for (int x = 0; x < RingTexture; ++x)
+            {
+                float r = Vector2.Distance(new Vector2(x + 0.5f, y + 0.5f), new Vector2(half, half));
+                float alpha = Mathf.Clamp01(outer - r + 0.5f) * Mathf.Clamp01(r - inner + 0.5f);
+                pixels[y * RingTexture + x] = new Color32(255, 255, 255, (byte)(alpha * 255f));
+            }
+        }
+        texture.SetPixels32(pixels);
+        texture.Apply();
+        return Sprite.Create(texture, new Rect(0, 0, RingTexture, RingTexture), new Vector2(0.5f, 0.5f));
     }
 }

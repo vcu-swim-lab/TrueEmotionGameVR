@@ -2,8 +2,12 @@
 
 A VR game for the Meta Quest Pro that detects the emotion on the player's face. The emotion
 model and its optional per-player calibration come from the
-[VREmotionDetection](https://github.com/vcu-swim-lab/VREmotionDetection) library; this project
-runs the sessions around it.
+[VREmotionDetection](https://github.com/vcu-swim-lab/VREmotionDetection) library (version
+3.0.0); this project runs the sessions around it.
+
+The game uses the library's on-device model, so nothing leaves the headset. The library's other
+prediction option, Jev (an online service by Typesafe), is switched on only from code and is not
+used here.
 
 
 ## 📋 Prerequisites
@@ -17,7 +21,8 @@ runs the sessions around it.
 
 1. Clone this repository.
 2. In Unity Hub, choose `Add > Add project from disk` and select the folder.
-3. Open it. The VREmotionDetection library is downloaded automatically by the Package Manager.
+3. Open it. The VREmotionDetection library, and the packages it needs (such as Newtonsoft JSON),
+   are downloaded automatically by the Package Manager.
 
 **Working on the library at the same time?** Put a copy (or a folder link) of the library at
 `Packages/com.vcu-swim-lab.vr-emotion-detection`. Unity then uses that local copy instead of the

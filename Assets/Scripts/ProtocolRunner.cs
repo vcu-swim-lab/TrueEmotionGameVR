@@ -8,6 +8,7 @@ using UnityEngine;
 using UnityEngine.Serialization;
 
 using VcuSwimLab.Calibration;
+using VcuSwimLab.VREmotionDetection;
 
 using Random = System.Random;
 

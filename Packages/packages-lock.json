@@ -136,6 +136,13 @@
       "dependencies": {},
       "url": "https://packages.unity.com"
     },
+    "com.unity.nuget.newtonsoft-json": {
+      "version": "3.2.1",
+      "depth": 1,
+      "source": "registry",
+      "dependencies": {},
+      "url": "https://packages.unity.com"
+    },
     "com.unity.recorder": {
       "version": "5.1.2",
       "depth": 0,
@@ -263,9 +270,12 @@
       "dependencies": {
         "com.unity.ai.inference": "2.2.1",
         "com.meta.xr.sdk.core": "77.0.0",
-        "com.unity.xr.openxr": "1.15.0"
+        "com.unity.xr.openxr": "1.15.0",
+        "com.unity.nuget.newtonsoft-json": "3.2.1",
+        "com.unity.modules.jsonserialize": "1.0.0",
+        "com.unity.modules.unitywebrequest": "1.0.0"
       },
-      "hash": "96ad024d2dd9db69480ab86d2b977b5a9e7dbbb8"
+      "hash": "1d08c1f302fc762d4f342d2806131e728787ce68"
     },
     "com.unity.modules.accessibility": {
       "version": "1.0.0",

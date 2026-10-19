@@ -7,6 +7,7 @@ using System.Text;
 using UnityEngine;
 
 using VcuSwimLab.Calibration;
+using VcuSwimLab.VREmotionDetection;
 
 // Writes one self-contained CSV row per face prediction, plus a metadata sidecar
 // describing the session.

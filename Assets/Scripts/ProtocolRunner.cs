@@ -5,31 +5,31 @@ using System.Text;
 
 using TMPro;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 using VcuSwimLab.Calibration;
+using VcuSwimLab.VREmotionDetection;
 
 using Random = System.Random;
 
-// Finite session runner for the session-local calibration study.
+// The game: the player acts each of the seven emotions and sees what the system predicted.
 //
-// Two blocks, seven states each, no feedback of any kind:
+//   Part 1 -- calibration, one trial per emotion (only when the library's Use Calibration is
+//             ticked): get ready, act for 10 seconds. The predictor learns this player's face.
+//   Part 2 -- one trial per emotion, shuffled: act for 10 seconds, then the predicted emotion
+//             (the majority over the trial's scored seconds), the next emotion and a circle
+//             countdown to it. The end screen lists every trial's target and prediction.
 //
-//   K -- calibration, one trial per state.   7 trials
-//   D -- evaluation, two trials per state.  14 trials
+// Every second of acting is logged in full (SessionLogger), and with Save Face Tracking the
+// 70 face values of every frame too, for the avatar video (FaceTrackingRecorder).
 //
-// The point of the split is that a calibration profile fitted on K is scored on *separate
-// trials* of the same states in D. The earlier within-trial measurement -- fit on the first
-// ticks of a held expression, test on its last ticks -- measures consistency within one
-// performance, and the gain it reported decays to nothing as those ticks are moved apart.
+// The earlier study flow (prompt, 3-2-1 countdown, live result and score, 14 test trials) and
+// the older emotion game (ProgressGame) were removed on 2026-10-19; both are in git history.
 //
-// D has two trials per state rather than one because a seven-trial evaluation cannot support
-// a decision: its trial-level metric moves in steps of 1/7, and a sign test over seven paired
-// trials reaches significance only on a perfect sweep.
-//
-// Neutral is a prompted state here, with its own trial, its own countdown and its own ten
-// ticks. It is deliberately NOT harvested from the inter-trial relax phase: a transition
-// sample carries the tail of the previous expression, and building a Neutral centroid that
-// way was measured making things worse rather than better.
+// Neutral is acted like the others, with its own trial and its own ten ticks. It is
+// deliberately NOT harvested from the time between trials: a transition sample carries the
+// tail of the previous expression, and a Neutral centroid built that way was measured making
+// things worse rather than better.
 [RequireComponent(typeof(NewFaceAuModel))]
 [RequireComponent(typeof(DeviceManager))]
 [RequireComponent(typeof(OVRFaceExpressions))]
@@ -38,33 +38,53 @@ public class ProtocolRunner : MonoBehaviour
     // Bump when anything that changes the meaning of a recording changes: the class set,
     // the block structure, the timings, or the feedback policy. It is written into the
     // session metadata so a pooled analysis can refuse to mix incompatible recordings.
-    // `single-pass-v2` is a different protocol -- six states, no Neutral -- and keeps its
-    // meaning. Sessions recorded under different protocol versions are never pooled, so
-    // redefining a version in place would break that guarantee for anything already
-    // stamped with it.
+    // Recordings of the removed study flow carry `session-local-v1` to `v3`, and are never
+    // pooled with these.
     //
-    // `session-local-v2` (2026-10-13): the calibration block runs only when calibration is on,
-    // each part is named on screen, and the participant sees the predicted emotion every
-    // second during the test block. Not pooled with v1, which showed nothing.
-    //
-    // `session-local-v3` (2026-10-15): the participant also sees a running score during each
-    // test trial and a per-emotion results table at the end. Not pooled with v2, which showed
-    // the prediction but no score.
-    public const string ProtocolVersion = "session-local-v3";
+    // `demo-v1` (2026-10-16): one test pass, a remaining-time bar while acting, and the
+    // predicted emotion after each test trial.
+    // `demo-v2` (2026-10-17): the result screen also announces the next trial and counts down
+    // to it, so a separate get-ready screen is left only before trials that follow no result.
+    // Unchanged when the demo became the only game (2026-10-19): the screens and timings did
+    // not change, so these recordings mean the same as the earlier demo-v2 ones.
+    public const string ProtocolVersion = "demo-v2";
 
-    public const int CalibrationPasses = 1;   // K block: 7 trials
-    public const int EvaluationPasses = 2;    // D block: 14 trials
+    public const int CalibrationPasses = 1;   // Part 1: 7 trials
+    public const int EvaluationPasses = 1;    // Part 2: 7 trials
     public const int TicksPerTrial = 10;
+
+    // Text colours, on the emotion word only: the predicted emotion when it matches the acted
+    // one and when it does not, and the next emotion. Grey for the trial counter.
+    private const string CorrectColor = "#9BE15D";
+    private const string WrongColor = "#FF5A5A";
+    private const string NextColor = "#FFF04D";
+    private const string CounterColor = "#969BA5";
 
     [Header("Scene")]
     [Tooltip("The instruction text. Left empty, the object named 'Instruction' is used.")]
     [SerializeField] private TextMeshProUGUI instructionText;
 
-    [Header("Timings (seconds)")]
-    [SerializeField] private float promptSeconds = 2f;
-    [SerializeField] private float countdownSeconds = 3f;
-    [SerializeField] private float completeSeconds = 1f;
-    [SerializeField] private float relaxSeconds = 4f;
+    [Header("Screen lengths (seconds)")]
+    [Tooltip("The start screen.")]
+    [FormerlySerializedAs("demoIntroSeconds")]
+    [SerializeField, Min(0f)] private float introScreenSeconds = 10f;
+    [Tooltip("The \"Part 1: Calibration\" and \"Part 2\" screens.")]
+    [FormerlySerializedAs("demoPartSeconds")]
+    [SerializeField, Min(0f)] private float partScreenSeconds = 6f;
+    [Tooltip("Every get-ready and result screen: how long its text is shown before the " +
+             "circle countdown appears.")]
+    [FormerlySerializedAs("demoReadSeconds")]
+    [SerializeField, Min(0f)] private float readingSeconds = 5f;
+    [Tooltip("The circle countdown, one number a second, at the end of every get-ready and " +
+             "result screen.")]
+    [FormerlySerializedAs("demoCountdownSeconds")]
+    [SerializeField, Min(1)] private int circleCountdownSeconds = 5;
+
+    [Header("Recording")]
+    [Tooltip("Saves the 70 face tracking values every frame to face_tracking.csv in the " +
+             "session folder, from the first get-ready screen to the end screen, for replaying " +
+             "the face on an avatar afterwards.")]
+    [SerializeField] private bool saveFaceTracking = false;
 
     [Header("Session")]
     [Tooltip("Leave at 0 to draw a seed from the clock. The value used is recorded either way.")]
@@ -93,8 +113,8 @@ public class ProtocolRunner : MonoBehaviour
     };
 
     // Neutral is deliberately absent. Every emoji here depicts a performed expression, and
-    // showing one for Neutral would prompt the participant to *act* neutral rather than to
-    // rest. It is prompted with text instead; see `PromptScreen`.
+    // showing one for Neutral would prompt the player to *act* neutral rather than to rest.
+    // Its acting screen asks them to let the face rest instead.
     public static readonly Dictionary<Emotion, string> EmotionToEmoji = new()
     {
         { Emotion.Anger, "🤬" },
@@ -105,34 +125,8 @@ public class ProtocolRunner : MonoBehaviour
         { Emotion.Surprise, "😲" },
     };
 
-    // Worded identically for every participant, and asking for rest rather than for an
-    // expression. Two lines, matching the shape of the emoji prompts so the Neutral trial
-    // does not look like a different kind of screen -- and so it fits the instruction box
-    // without overflowing it.
-    //
-    // Deliberately not "Relax your face": that is exactly what the between-trial transition
-    // screen says, and reusing it would blur the line between the part that is recorded and
-    // the part that is not.
-    //
-    // The guidance about where the mouth and eyebrows should sit lives in the intro instead.
-    // It is worth saying -- asked to "be neutral", people often produce a deliberately blank
-    // or tensed face rather than a resting one -- but it is too long to repeat on a prompt
-    // that appears mid-trial, and the intro has six seconds in which to read it.
-    private const string NeutralPrompt = "Neutral\nLet your face rest.";
-
-    private static string PromptScreen(Emotion emotion) =>
-        emotion == Emotion.Neutral
-            ? NeutralPrompt
-            : $"{EmotionToEmoji[emotion]}\n{emotion}";
-
-    private static string HoldScreen(Emotion emotion) =>
-        emotion == Emotion.Neutral
-            ? "Stay relaxed"
-            : $"{EmotionToEmoji[emotion]}\n\nHold it";
-
-    // A position marker on the prompt screen, naming the part: "Calibration 3 of 7" in the
-    // calibration block, "Trial 5 of 14" in the test block. Shown on the prompt only, never
-    // during the hold.
+    // A position marker, naming the part: "Calibration 3 of 7" in Part 1, "Trial 5 of 7" in
+    // Part 2. Shown on the get-ready and result screens, never while acting.
     private string TrialCounter(PlannedTrial trial)
     {
         var block = Plan.Where(p => p.Role == trial.Role).ToList();
@@ -141,18 +135,19 @@ public class ProtocolRunner : MonoBehaviour
         return $"{name} {position} of {block.Count}";
     }
 
-    // The end screen's per-emotion table of the test block, laid out like the analysis
-    // script's (emotion, correct seconds / scored seconds, %). Monospaced so the columns line up.
-    private string TestResultsTable()
+    // The end screen: one row per Part 2 trial, acted emotion and predicted emotion, the
+    // prediction green when it matches and red when it does not.
+    private string ResultsTable()
     {
         var table = new StringBuilder("<mspace=0.6em>");
-        table.Append($"{"emotion",-11} {"correct",9} {"%",5}");
-        for (int c = 0; c < ClassOrder.Length; ++c)
+        table.Append($"{"Target",-11}{"Predicted",-11}");
+        foreach (var (target, predicted) in results)
         {
-            string percent = testSeconds[c] > 0
-                ? $"{100f * testCorrect[c] / testSeconds[c]:F0}%"
-                : "-";
-            table.Append($"\n{ClassOrder[c],-11} {testCorrect[c],4}/{testSeconds[c],-4} {percent,5}");
+            string shown = predicted.Scorable
+                ? $"<color={(predicted.ClassIndex == (int)target ? CorrectColor : WrongColor)}>" +
+                  $"{ClassOrder[predicted.ClassIndex],-11}</color>"
+                : $"<color={CounterColor}>{"-",-11}</color>";
+            table.Append($"\n{target,-11}{shown}");
         }
         return table.Append("</mspace>").ToString();
     }
@@ -187,10 +182,9 @@ public class ProtocolRunner : MonoBehaviour
     // results file and this protocol all use the same calibration.
     private bool calibrationSealed;
 
-    // Test-block score per emotion, indexed by `ClassOrder`: scored seconds whose result was
-    // the prompted emotion, and scored seconds shown. The same counts as the hold screen's score.
-    private readonly int[] testCorrect = new int[ClassOrder.Length];
-    private readonly int[] testSeconds = new int[ClassOrder.Length];
+    // Part 2's trials in the order acted: the acted emotion and its predicted emotion, for the
+    // end screen.
+    private readonly List<(Emotion Target, TrialVote Predicted)> results = new();
 
     public IReadOnlyList<PlannedTrial> Plan { get; private set; }
 
@@ -233,22 +227,28 @@ public class ProtocolRunner : MonoBehaviour
             ? randomizationSeed
             : Environment.TickCount & 0x7FFFFFFF;
 
-        // The library's "Use Calibration" checkbox: off, the calibration block is skipped.
+        // The library's "Use Calibration" checkbox: off, Part 1 is skipped.
         Plan = BuildPlan(seedUsed, includeCalibration: predictor.UseCalibration);
 
         RunSession();
     }
 
+    void Update() => gameScreen?.Tick();
+
+    // After every Update, so the face tracking has already been read this frame.
+    void LateUpdate() => faceRecorder?.RecordFrame();
+
     // The calibration block, then the evaluation block, each a sequence of shuffled passes
     // over all seven states. Resolved up front so the whole schedule is fixed and recordable
     // in advance rather than decided trial by trial.
     // `includeCalibration`: false leaves out the calibration block, so a session without
-    // calibration is the test block only.
-    public static List<PlannedTrial> BuildPlan(int seed, bool includeCalibration = true)
+    // calibration is Part 2 only.
+    public static List<PlannedTrial> BuildPlan(int seed, bool includeCalibration = true,
+                                               int evaluationPasses = EvaluationPasses)
     {
         var random = new Random(seed);
         var plan = new List<PlannedTrial>(
-            (CalibrationPasses + EvaluationPasses) * PromptedEmotions.Length);
+            (CalibrationPasses + evaluationPasses) * PromptedEmotions.Length);
 
         // Carried across passes *and* across the block boundary, so the first evaluation
         // trial also differs from the last calibration trial.
@@ -292,7 +292,7 @@ public class ProtocolRunner : MonoBehaviour
         {
             AddPasses(BlockRole.Calibration, CalibrationPasses);
         }
-        AddPasses(BlockRole.Evaluation, EvaluationPasses);
+        AddPasses(BlockRole.Evaluation, evaluationPasses);
 
         return plan;
     }
@@ -342,6 +342,8 @@ public class ProtocolRunner : MonoBehaviour
             int calibrationTrials = Plan.Count(t => t.Role == BlockRole.Calibration);
             int evaluationTrials = Plan.Count(t => t.Role == BlockRole.Evaluation);
 
+            int evaluationPasses = EvaluationPasses;
+
             var sessionInfo = new Dictionary<string, string>
             {
                 { "protocol_version", ProtocolVersion },
@@ -356,18 +358,21 @@ public class ProtocolRunner : MonoBehaviour
                 { "calibration_trials", calibrationTrials.ToString() },
                 { "evaluation_trials", evaluationTrials.ToString() },
                 { "calibration_passes", CalibrationPasses.ToString() },
-                { "evaluation_passes", EvaluationPasses.ToString() },
-                { "evaluation_repeats", EvaluationPasses.ToString() },
+                { "evaluation_passes", evaluationPasses.ToString() },
+                { "evaluation_repeats", evaluationPasses.ToString() },
 
-                // What the participant saw, recorded so the difference is machine-detectable.
-                // Recordings made before this field exists did not show a counter; a reader
-                // comparing them against later ones can tell, without having to know which
-                // build produced which folder.
-                { "trial_counter_shown", "true" },
+                // What the player saw, recorded so the difference is machine-detectable. The
+                // removed study flow showed a counter on screen while prompting; this game
+                // shows none while acting.
+                { "trial_counter_shown", "false" },
 
                 { "ticks_per_trial", (fastRehearsal ? 3 : TicksPerTrial).ToString() },
                 { "fast_rehearsal", fastRehearsal ? "true" : "false" },
                 { "self_report", "not collected (deliberate; no controller in this study)" },
+
+                // As every demo-v2 recording has carried them, so readers need no special case.
+                { "demo", "true" },
+                { "face_tracking_saved", saveFaceTracking ? "true" : "false" },
             };
 
             sessionLogger = new SessionLogger(
@@ -392,6 +397,33 @@ public class ProtocolRunner : MonoBehaviour
     {
         sessionLogger?.Dispose();
         sessionLogger = null;
+        faceRecorder?.Dispose();
+        faceRecorder = null;
+    }
+
+    // The face tracking file, when Save Face Tracking is on.
+    private FaceTrackingRecorder faceRecorder;
+
+    private void StartFaceRecorder()
+    {
+        if (!saveFaceTracking)
+        {
+            return;
+        }
+
+        try
+        {
+            faceRecorder = new FaceTrackingRecorder(GetComponent<OVRFaceExpressions>(),
+                                                    sessionLogger.SessionDirectory);
+            Debug.Log($"{nameof(ProtocolRunner)}: saving face tracking to {faceRecorder.Path}");
+        }
+        catch (Exception e)
+        {
+            // The game runs on without it: the face file is for the video, not the recording.
+            faceRecorder = null;
+            Debug.LogError($"{nameof(ProtocolRunner)}: could not save face tracking " +
+                           $"({e.GetType().Name}: {e.Message}). The game continues without it.");
+        }
     }
 
     // The Quest pauses rather than quits when the headset comes off mid-session.
@@ -415,9 +447,19 @@ public class ProtocolRunner : MonoBehaviour
     // does not. The recording is marked in its metadata too, and the analysis refuses it.
     private void Show(string message)
     {
+        gameScreen?.Hide();
         instructionText.text = fastRehearsal
             ? "-- REHEARSAL - NOT VALID DATA --\n\n" + message
             : message;
+    }
+
+    // The trial screens (get ready, act, result) replace the instruction text; only a rehearsal
+    // banner stays on it. The start, part and end screens use the instruction text itself.
+    private GameScreen gameScreen;
+
+    private void ClearForGameScreen()
+    {
+        instructionText.text = fastRehearsal ? "-- REHEARSAL - NOT VALID DATA --" : "";
     }
 
     // The canvas is fixed in the room, and the room's forward is the headset's tracking
@@ -484,6 +526,8 @@ public class ProtocolRunner : MonoBehaviour
     {
         await PlaceCanvasInFrontOfPlayer();
 
+        gameScreen = new GameScreen(instructionText);
+
         if (fastRehearsal)
         {
             Debug.LogWarning($"{nameof(ProtocolRunner)}: FAST REHEARSAL is on. This recording " +
@@ -525,16 +569,19 @@ public class ProtocolRunner : MonoBehaviour
         // that the operator's note is written at the same moment the session starts.
         Debug.Log($"{nameof(ProtocolRunner)}: recording to {sessionLogger.SessionDirectory}");
 
+        StartFaceRecorder();
+
         Show("Each trial:\n" +
-             "1. See the emotion\n" +
-             "2. Count down 3-2-1\n" +
-             "3. Hold the face for 10 seconds\n" +
-             "4. Relax");
-        await Awaitable.WaitForSecondsAsync(Scaled(6f));
+             "1. Act the emotion shown (10 s)\n" +
+             "2. See what the system predicted\n" +
+             "3. Get ready for the next one");
+        await Awaitable.WaitForSecondsAsync(Scaled(introScreenSeconds));
 
         BlockRole? currentPart = null;
-        foreach (var trial in Plan)
+        for (int index = 0; index < Plan.Count; ++index)
         {
+            var trial = Plan[index];
+
             // Name each part when it starts.
             if (trial.Role != currentPart)
             {
@@ -545,7 +592,8 @@ public class ProtocolRunner : MonoBehaviour
                         ? "Part 2\n\nNow make each expression again."
                         : "Make each expression as it is shown.") +
                       "\nYou will see what the system thinks.");
-                await Awaitable.WaitForSecondsAsync(Scaled(4f));
+                faceRecorder?.SetScreen("part");
+                await Awaitable.WaitForSecondsAsync(Scaled(partScreenSeconds));
             }
 
             // The profile is sealed on the way into the first evaluation trial, which is the
@@ -556,7 +604,11 @@ public class ProtocolRunner : MonoBehaviour
                 SealCalibration();
             }
 
-            await RunTrial(trial);
+            // A Part 2 trial's result screen counts down to the next trial, so a get-ready
+            // screen is needed only where no result screen came just before.
+            bool getReady = index == 0 || Plan[index - 1].Role != BlockRole.Evaluation;
+            PlannedTrial? next = index + 1 < Plan.Count ? Plan[index + 1] : null;
+            await RunTrial(trial, next, getReady);
         }
 
         // A plan with no evaluation block would otherwise finish unsealed, leaving the
@@ -566,7 +618,7 @@ public class ProtocolRunner : MonoBehaviour
             SealCalibration();
         }
 
-        Show("Session complete.\n\nThank you.\n\n" + TestResultsTable());
+        Show("Demo complete. Thank you.\n\n" + ResultsTable());
         Debug.Log($"{nameof(ProtocolRunner)}: session complete, {Plan.Count} trials recorded.");
 
         CloseSessionLogger();
@@ -656,47 +708,92 @@ public class ProtocolRunner : MonoBehaviour
         enabled = false;
     }
 
-    private async Awaitable RunTrial(PlannedTrial trial)
+    // One trial: a get-ready countdown when no result screen came before it, acting with the
+    // remaining-time bar, and in Part 2 the trial's predicted emotion with a countdown to the
+    // next trial. The recording itself is `RecordTrial`.
+    //
+    // No self-report. This is a deliberate decision, not an omission, and it has a known cost:
+    // when a class scores badly there is no way to tell whether the player failed to produce
+    // the expression or the model failed to detect it. There are no controllers and no
+    // in-headset input of any kind to collect it with.
+    private async Awaitable RunTrial(PlannedTrial trial, PlannedTrial? next, bool getReady)
     {
-        // 1. Prompt. Named and pictured for the six performed expressions; worded as rest
-        //    for Neutral, which has no emoji. Carries the trial counter above it -- see
-        //    `TrialCounter` for why it does not name the block.
-        Show($"{TrialCounter(trial)}\n\n{PromptScreen(trial.Emotion)}");
-        await Awaitable.WaitForSecondsAsync(Scaled(promptSeconds));
-
-        // 2. Countdown, so the expression starts at a known moment rather than drifting
-        //    into the recording window. The next emotion stays named above the number.
-        for (int i = Mathf.RoundToInt(countdownSeconds); i > 0; --i)
+        // 1. Get ready: time to read and relax, then the countdown. Doubles as the relax
+        //    period before the trial, which keeps its first frames from carrying the tail of
+        //    the previous expression.
+        if (getReady)
         {
-            Show($"Next Emotion: {trial.Emotion}\n\n{i}");
-            await Awaitable.WaitForSecondsAsync(Scaled(1f));
+            float lead = Scaled(readingSeconds);
+            ClearForGameScreen();
+            // The face file's time 0 is the first of these screens.
+            faceRecorder?.Begin();
+            faceRecorder?.SetScreen("get_ready", trial.TrialId, trial.Emotion.ToString());
+            gameScreen.ShowCountdown($"<color={CounterColor}>{TrialCounter(trial)}</color>",
+                                     GameScreen.GetReadySize,
+                                     $"Relax yourself.\nNext: <color={NextColor}>{trial.Emotion}</color>",
+                                     GameScreen.GetReadySize,
+                                     "Starts in", circleCountdownSeconds, Scaled(circleCountdownSeconds), lead);
+            await Awaitable.WaitForSecondsAsync(lead + Scaled(circleCountdownSeconds));
         }
 
-        // 3. Hold, while the model is polled once a second.
-        Show(HoldScreen(trial.Emotion));
-        await RecordTrial(trial);
+        // 2. Act. No live result and no score: the result comes after the trial.
+        ClearForGameScreen();
+        float holdSeconds = fastRehearsal ? 3 : TicksPerTrial;
+        if (trial.Emotion == Emotion.Neutral)
+        {
+            gameScreen.ShowHold("Act Neutral", "Let your face rest.", GameScreen.BodySize + 6f,
+                                "", holdSeconds);
+        }
+        else
+        {
+            // Three times the body text, so the emoji reads from a distance.
+            gameScreen.ShowHold($"Act {trial.Emotion}", EmotionToEmoji[trial.Emotion],
+                                3f * 24f, "Hold it", holdSeconds);
+        }
 
-        // 4. Non-evaluative acknowledgement -- identical whatever the model predicted.
-        Show("Recording complete.");
-        await Awaitable.WaitForSecondsAsync(Scaled(completeSeconds));
+        faceRecorder?.SetScreen("act", trial.TrialId, trial.Emotion.ToString());
+        var predicted = await RecordTrial(trial);
 
-        // 5. No self-report. This is a deliberate decision, not an omission, and it has a
-        //    known cost: when a class scores badly there is no way to tell whether the
-        //    participant failed to produce the expression or the model failed to detect
-        //    it. Fear scored 0% for both subjects recorded so far, and that result will
-        //    stay uninterpretable in exactly this way. Collecting it would have meant an
-        //    operator writing down 336 spoken answers by hand, since the study uses no
-        //    controllers and there is no in-headset input of any kind.
+        // 3. Part 2 only: the emotion predicted most often over the trial's scored seconds
+        //    (calibrated when calibration is ready), what comes next, and a countdown to it --
+        //    to the next trial, or to the end screen after the last.
+        if (trial.Role != BlockRole.Evaluation)
+        {
+            return;
+        }
 
-        // 6. Relax. Fixed length, and never skipped -- it is what keeps the next trial's
-        //    first frames from carrying the tail of this expression.
-        Show("Relax your face.");
-        await Awaitable.WaitForSecondsAsync(Scaled(relaxSeconds));
+        results.Add((trial.Emotion, predicted));
+
+        string headline = "In this trial,\nyour face was not tracked.";
+        if (predicted.Scorable)
+        {
+            string color = predicted.ClassIndex == (int)trial.Emotion ? CorrectColor : WrongColor;
+            headline = "In this trial,\nyour predicted emotion was " +
+                       $"<color={color}>{ClassOrder[predicted.ClassIndex]}</color>";
+        }
+
+        string upcoming = "That was the last one.";
+        string label = "Results in";
+        if (next.HasValue)
+        {
+            string counter = TrialCounter(next.Value);
+            upcoming = $"Next: <color={NextColor}>{next.Value.Emotion}</color> " +
+                       $"<color={CounterColor}>({char.ToLower(counter[0])}{counter.Substring(1)})</color>";
+            label = "Starts in";
+        }
+
+        // Time to read first (5 s by default), then "Starts in" and the circle (5 s).
+        float readSeconds = Scaled(readingSeconds);
+        ClearForGameScreen();
+        faceRecorder?.SetScreen("result", trial.TrialId, trial.Emotion.ToString());
+        gameScreen.ShowCountdown(headline, GameScreen.HeadlineSize, upcoming, GameScreen.BodySize,
+                                 label, circleCountdownSeconds, Scaled(circleCountdownSeconds), readSeconds);
+        await Awaitable.WaitForSecondsAsync(readSeconds + Scaled(circleCountdownSeconds));
     }
 
-    // Polls the model once a second for the hold period and logs every tick. In the test
-    // block it also shows each second's result and the running score.
-    private async Awaitable RecordTrial(PlannedTrial trial)
+    // Polls the model once a second while the player acts and logs every tick. Returns the
+    // trial's majority vote: calibrated when calibration is ready, the model's own otherwise.
+    private async Awaitable<TrialVote> RecordTrial(PlannedTrial trial)
     {
         int ticks = fastRehearsal ? 3 : TicksPerTrial;
 
@@ -706,8 +803,6 @@ public class ProtocolRunner : MonoBehaviour
         // check exists to make impossible.
         var rawVotes = new List<TickVote>();
         var calibratedVotes = new List<TickVote>();
-        int correctSeconds = 0;
-        int scoredSeconds = 0;
 
         // Each calibration trial is one emotion of the predictor's movement calibration. The
         // block is recorded the same way in a raw session; only the calibration is skipped.
@@ -749,39 +844,6 @@ public class ProtocolRunner : MonoBehaviour
                 rawVotes.Add(new TickVote(i, (int)prediction.Value.Emotion));
             }
 
-            // Test block: show the final result every tick -- the calibrated emotion when
-            // calibration is ready (model scores and face movements against this person's own),
-            // the model's own prediction otherwise. The same value as the results file's `emotion`.
-            // Below it, the running score over the scored ticks (1-9): seconds whose result was
-            // the prompted emotion, out of scored seconds so far. A second without tracking
-            // counts as a miss.
-            if (trial.Role == BlockRole.Evaluation)
-            {
-                string seen = "—";
-                bool correct = false;
-                if (prediction.HasValue)
-                {
-                    var shown = calibrated.HasValue ? (Emotion)calibrated.Value.ClassIndex
-                                                    : prediction.Value.Emotion;
-                    seen = shown.ToString();
-                    correct = shown == trial.Emotion;
-                }
-
-                if (PersonalCentroidBuilder.IsScoredTick(i))
-                {
-                    scoredSeconds++;
-                    testSeconds[(int)trial.Emotion]++;
-                    if (correct)
-                    {
-                        correctSeconds++;
-                        testCorrect[(int)trial.Emotion]++;
-                    }
-                }
-
-                string score = scoredSeconds > 0 ? $"\nScore: {correctSeconds}/{scoredSeconds}" : "";
-                Show($"{HoldScreen(trial.Emotion)}\n\nResult: {seen}{score}");
-            }
-
             // Logged whether or not tracking held, so a dropout is visible in the file
             // rather than showing up as a missing row.
             sessionLogger?.LogPrediction(trial.TrialId, trial.Role, trial.RepeatIndex,
@@ -796,23 +858,24 @@ public class ProtocolRunner : MonoBehaviour
             }
         }
 
+        var rawVote = TrialMajority.Vote(rawVotes, ClassOrder.Length);
+        var calibratedVote = TrialMajority.Vote(calibratedVotes, ClassOrder.Length);
         sessionLogger?.LogTrial(trial.TrialId, trial.Role, trial.RepeatIndex, trial.Emotion,
-                                TrialMajority.Vote(rawVotes, ClassOrder.Length),
-                                TrialMajority.Vote(calibratedVotes, ClassOrder.Length));
+                                rawVote, calibratedVote);
+
+        return calibratedVote.Scorable ? calibratedVote : rawVote;
     }
 
     /// <summary>
     /// The development-build debug readout, to the Unity console and nowhere else.
     /// </summary>
     /// <remarks>
-    /// Deliberately not on the headset panel, and named accordingly. The hold screen is in
-    /// front of the participant while their face *is* the measurement, and the existing
-    /// protocol goes out of its way never to change text during it -- see `TrialCounter`.
-    /// Putting a prediction there would turn the evaluation block into a feedback task and
-    /// contradict the intro's promise that nothing is scored.
+    /// Deliberately not on the headset panel, and named accordingly. The acting screen is in
+    /// front of the player while their face *is* the measurement, and never changes its text
+    /// during it; the prediction comes after the trial.
     ///
     /// The operator reads it over `adb logcat` instead. That keeps the readout available for
-    /// debugging while leaving the participant's experience identical in every mode.
+    /// debugging while leaving the player's experience identical in every mode.
     /// </remarks>
     private void LogCalibrationDebug(PlannedTrial trial, int tick,
                                      FacePrediction? prediction, NearestCentroid? calibrated)

@@ -694,7 +694,6 @@ GameObject:
   - component: {fileID: 964688071}
   - component: {fileID: 964688075}
   - component: {fileID: 964688076}
-  - component: {fileID: 964688078}
   - component: {fileID: 964688080}
   - component: {fileID: 964688079}
   - component: {fileID: 964688081}
@@ -776,7 +775,7 @@ RectTransform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 964688070}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 150}
+  m_LocalPosition: {x: 0, y: 0, z: 250}
   m_LocalScale: {x: 0.44782612, y: 0.44782612, z: 0.44782612}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -830,21 +829,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a95044baf65b10c4e89b246d2f881ac9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
---- !u!114 &964688078
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 964688070}
-  m_Enabled: 0
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 8289b5e9f362b36439ae8d269a35a379, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  soundModelTemp: {fileID: 0}
-  progressBar: {fileID: 0}
-  playerId: player1
 --- !u!114 &964688079
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -885,10 +869,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   instructionText: {fileID: 0}
-  promptSeconds: 2
-  countdownSeconds: 3
-  completeSeconds: 1
-  relaxSeconds: 4
+  introScreenSeconds: 10
+  partScreenSeconds: 6
+  readingSeconds: 5
+  circleCountdownSeconds: 5
+  saveFaceTracking: 1
   randomizationSeed: 0
   fastRehearsal: 0
   calibrationDebugLogging: 0

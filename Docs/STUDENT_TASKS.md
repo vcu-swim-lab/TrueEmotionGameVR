@@ -1,5 +1,9 @@
 # TrueEmotionVR — Getting Started & Task List
 
+> **Out of date since 2026-10-19.** The tasks below that use `ProgressGame.cs` or
+> `ProgressBar.cs` no longer apply: the old emotion game was removed, and the game is now the
+> `ProtocolRunner` flow described in the README (*The game*). The old files are in git history.
+
 Welcome! This document is your roadmap. Work through it top to bottom. Each task is
 self-contained, small enough to finish in one sitting or two, and ends with a commit.
 

@@ -119,6 +119,19 @@ __pycache__/
 # fixture, lives in Assets/Tests/EditMode/Fixtures/.
 /Analysis/
 /notebooks/
+# The archived copies of the notebooks too: kept locally, not tracked (since 2026-10-19).
+/Archive/notebooks/
 
 # Results copied from the headset (VR Emotion > Get Results From Headset): real people, never commit.
 /HeadsetResults/
+
+# Movement SDK Body Tracking Samples (134 MB): re-imported from the Package Manager when the
+# avatar replay is needed (README, "Demo video with avatar"), not committed.
+/[Aa]ssets/Samples/Meta XR Movement SDK/
+/[Aa]ssets/Samples/Meta XR Movement SDK.meta
+
+# Rebuilt by VR Emotion > Avatar Replay on every render.
+/[Aa]ssets/DemoReplay/AvatarReplay.unity
+/[Aa]ssets/DemoReplay/AvatarReplay.unity.meta
+
+__pycache__/

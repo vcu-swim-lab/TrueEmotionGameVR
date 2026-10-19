@@ -157,7 +157,7 @@ committed: `HeadsetResults/`, `Logs/`, `Analysis/` (scripts and participant data
 | `Assets/Tests/EditMode/` | Tests: calibration math, parity with the Python analysis, scene setup |
 | `Assets/Scenes/Main.unity` | The scene |
 | `Docs/` | Study protocol and reports |
-| `Archive/` | A snapshot of the offline analysis scripts, notebooks (code only) and reports, without data |
+| `Archive/` | A snapshot of the offline analysis scripts and reports, without data or notebooks |
 
 
 ## ✅ Tests

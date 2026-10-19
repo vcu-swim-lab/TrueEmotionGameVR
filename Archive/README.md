@@ -1,13 +1,12 @@
 # Archive
 
 A snapshot (2026-10-12) of the offline analysis behind the emotion model and its calibration:
-the scripts, the reports and the training notebooks. It is kept for the record; nothing in the
-game or the library depends on it, and it is not maintained.
+the scripts and the reports. It is kept for the record; nothing in the game or the library
+depends on it, and it is not maintained.
 
 | Folder | What it holds |
 |---|---|
 | `Analysis/` | The analysis scripts (`*.py`), their tests, and the reports (`*.md`). `exploratory/` holds the experiments (volume and jitter augmentation, error analysis, movement calibration, smoothing, ...). |
-| `notebooks/` | The Colab training notebooks, **code only**: every output was cleared. |
 | `Docs/` | Reports written during the work: volume augmentation, jitter, test error analysis. |
 | `VREmotionDetection-Docs/` | Reports that used to live in the library: its validation report and the Anger logit-adjustment report. |
 
@@ -18,6 +17,8 @@ game or the library depends on it, and it is not maintained.
   paths (for example `Analysis/data/`) that exist only on the researchers' machines.
 - **No participant codes.** Participants appear as `P01`, `P02`, ... The table that maps these
   back to recordings is kept only on the researchers' machines, never in this repository.
+- **No training notebooks.** The Colab notebooks were archived here (code only) until
+  2026-10-19 and are no longer tracked; they stay on the researchers' machines.
 
 ## Running the scripts
 

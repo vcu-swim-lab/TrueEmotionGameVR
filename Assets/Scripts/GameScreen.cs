@@ -2,11 +2,12 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-// The demo's screens (ProtocolRunner's Demo checkbox): a title, a centre text, a line under
-// it, and either a remaining-time bar (the hold) or a circle countdown (between trials). Built at run time as copies of the scene's
-// instruction text -- same font, emoji sprites and render layer -- so the demo needs no scene
-// changes and the study's own screens are left exactly as they are.
-public class DemoScreen
+// The game's trial screens (ProtocolRunner): a title, a centre text, a line under it, and
+// either a remaining-time bar (acting) or a circle countdown (get ready, result). Built at run
+// time as copies of the scene's instruction text -- same font, emoji sprites and render
+// layer -- so they need no scene changes. The start, part and end screens use the instruction
+// text itself.
+public class GameScreen
 {
     // Canvas units. The canvas is 800 x 447 with its origin at the centre; the content is
     // kept within about +-120 of it, so it stays near eye level.
@@ -31,7 +32,7 @@ public class DemoScreen
     private static readonly Color RingBackColor = new Color32(0x3C, 0x40, 0x4A, 0xFF);
     private static readonly Color RingFillColor = new Color32(0x2E, 0xA0, 0x46, 0xFF);
 
-    // The canvas background during the demo (the study keeps the scene's grey).
+    // The canvas background (the scene's own is grey).
     private static readonly Color BackgroundColor = new Color32(0x14, 0x16, 0x1C, 0xFF);
 
     public const float BodySize = 22f;
@@ -59,7 +60,7 @@ public class DemoScreen
     private bool countdownRunning;
     private string countdownLabel = "";
 
-    public DemoScreen(TextMeshProUGUI template)
+    public GameScreen(TextMeshProUGUI template)
     {
         var parent = template.rectTransform.parent;
         int layer = template.gameObject.layer;

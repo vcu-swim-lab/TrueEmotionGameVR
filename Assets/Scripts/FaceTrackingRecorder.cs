@@ -5,7 +5,7 @@ using System.Text;
 
 using UnityEngine;
 
-// The demo's face tracking file (ProtocolRunner's Save Face Tracking checkbox): the 70 Meta
+// The game's face tracking file (ProtocolRunner's Save Face Tracking checkbox): the 70 Meta
 // face-tracking weights every frame, for replaying the face on an avatar afterwards. Time 0 is
 // the first get-ready screen, which is also visible in a recording of the headset view, so the
 // two can be lined up without a sync marker.

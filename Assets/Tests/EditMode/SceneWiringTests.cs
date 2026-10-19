@@ -40,8 +40,9 @@ namespace VcuSwimLab.Calibration.Tests
         // local checkout and a git install, so its script is identified by its fixed GUID.
         private const string NewFaceAuModelGuid = "1e701289fcb9a714db0f5f067a0c54c1";
 
-        // The removed game-side component; nothing in the scene may still point at it.
+        // Removed game-side components; nothing in the scene may still point at them.
         private const string RemovedCalibrationSettingsGuid = "9b1f664d04035ce4dabcfa384cc6eff6";
+        private const string RemovedProgressGameGuid = "8289b5e9f362b36439ae8d269a35a379";
 
         /// <summary>One `--- !u!114 &id MonoBehaviour` block of a scene file.</summary>
         private sealed class SceneComponent
@@ -183,6 +184,14 @@ namespace VcuSwimLab.Calibration.Tests
             Assert.IsEmpty(With(RemovedCalibrationSettingsGuid),
                            "the scene still holds RuntimeCalibrationSettings, which no longer "
                            + "exists; Unity would show it as a missing script");
+        }
+
+        [Test]
+        public void No_component_points_at_the_removed_emotion_game()
+        {
+            Assert.IsEmpty(With(RemovedProgressGameGuid),
+                           "the scene still holds ProgressGame, the old emotion game, which no "
+                           + "longer exists; Unity would show it as a missing script");
         }
     }
 }

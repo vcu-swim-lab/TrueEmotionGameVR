@@ -1,5 +1,10 @@
 # Per-Person Calibration — Recording Protocols
 
+> **Retired 2026-10-19.** The study flow described here (`session-local-v1` to `v3`) was removed
+> from `ProtocolRunner.cs`; the game now runs only the former demo flow (`demo-v2`, see the README,
+> *The game*). This file is kept as the record of those protocols and their recordings, which are
+> never pooled with `demo-v2` ones. The code is in git history (last in commit `64ae8f5`).
+
 **Current protocol:** `session-local-v1`
 **Software:** [`ProtocolRunner.cs`](../Assets/Scripts/ProtocolRunner.cs)
 **Status:** recording software complete. **Data collection has not started.** See section 8.

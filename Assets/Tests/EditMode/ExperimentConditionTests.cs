@@ -70,7 +70,7 @@ namespace VcuSwimLab.Calibration.Tests
             // The library names a Jev backend "jev:<model>:p<prompt version>"; the SparseVR
             // backend is named after its model asset.
             Assert.IsTrue(ExperimentCondition.IsJevBackend("jev:jev-1.13.0:p1"));
-            Assert.IsFalse(ExperimentCondition.IsJevBackend("sparseVR_teacher_model_acted_only_vol-aug-k1_with-EmojiHero"));
+            Assert.IsFalse(ExperimentCondition.IsJevBackend("sparseVR_teacher_model_acted_only_vol-aug-k1"));
             Assert.IsFalse(ExperimentCondition.IsJevBackend("my-jev-lookalike"));
             Assert.IsFalse(ExperimentCondition.IsJevBackend(string.Empty));
             Assert.IsFalse(ExperimentCondition.IsJevBackend(null), "no backend selected is not Jev");

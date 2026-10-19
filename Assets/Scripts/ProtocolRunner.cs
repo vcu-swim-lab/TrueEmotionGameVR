@@ -47,6 +47,11 @@ public class ProtocolRunner : MonoBehaviour
     // to it, so a separate get-ready screen is left only before trials that follow no result.
     // Unchanged when the demo became the only game (2026-10-19): the screens and timings did
     // not change, so these recordings mean the same as the earlier demo-v2 ones.
+    //
+    // 2026-10-20: the model can be SparseVR or Jev, with calibration on or off (four conditions,
+    // see ConditionSetup). The flow is unchanged, so the version is too; every recording carries
+    // `condition`, `face_backend` and `backend_id` in its metadata, and a pooled analysis must
+    // filter on them rather than assume SparseVR.
     public const string ProtocolVersion = "demo-v2";
 
     public const int CalibrationPasses = 1;   // Part 1: 7 trials
@@ -63,6 +68,13 @@ public class ProtocolRunner : MonoBehaviour
     [Header("Scene")]
     [Tooltip("The instruction text. Left empty, the object named 'Instruction' is used.")]
     [SerializeField] private TextMeshProUGUI instructionText;
+
+    [Header("Condition")]
+    [Tooltip("Which model predicts and whether the player calibrates. 1 and 2 use the on-device " +
+             "SparseVR model, 3 and 4 Typesafe's Jev (needs internet and the key in " +
+             "Assets/Resources/jev_api_key.txt). 2 and 4 add Part 1, calibration. This sets the " +
+             "New Face Au Model's Use Calibration when the game starts.")]
+    [SerializeField] private GameCondition condition = GameCondition.SparseVrNoCalibration;
 
     [Header("Screen lengths (seconds)")]
     [Tooltip("The start screen.")]
@@ -96,8 +108,8 @@ public class ProtocolRunner : MonoBehaviour
     [SerializeField] private bool fastRehearsal = false;
 
     [Header("Calibration")]
-    [Tooltip("Whether the session calibrates is the \"Use Calibration\" checkbox on the New Face " +
-             "Au Model component (VREmotionDetection library). This one only writes each " +
+    [Tooltip("Whether the session calibrates is set by the Condition above (2 and 4 " +
+             "calibrate, 1 and 3 do not). This one only writes each " +
              "evaluation tick's calibrated decision to the Unity console, readable over " +
              "`adb logcat`. Development builds only. Nothing is ever shown to the participant.")]
     [SerializeField] private bool calibrationDebugLogging = false;
@@ -217,6 +229,12 @@ public class ProtocolRunner : MonoBehaviour
 
         predictor = GetComponent<NewFaceAuModel>();
 
+        // The condition chooses the model and switches calibration on or off, before the plan
+        // below is built: whether there is a Part 1 follows the predictor's Use Calibration.
+        // A setup problem (no Jev key) is not thrown here; the readiness check in RunSession
+        // shows it on the headset.
+        ConditionSetup.Configure(predictor, condition);
+
         if (!CheckClassOrder())
         {
             enabled = false;
@@ -227,7 +245,7 @@ public class ProtocolRunner : MonoBehaviour
             ? randomizationSeed
             : Environment.TickCount & 0x7FFFFFFF;
 
-        // The library's "Use Calibration" checkbox: off, Part 1 is skipped.
+        // Conditions 2 and 4 (calibration on) have Part 1; 1 and 3 skip it.
         Plan = BuildPlan(seedUsed, includeCalibration: predictor.UseCalibration);
 
         RunSession();
@@ -336,6 +354,7 @@ public class ProtocolRunner : MonoBehaviour
                 { "face_model_append_softmax", "false" },
                 { "face_model_softmax_reason", "graph already ends in Softmax; output is already a probability distribution" },
             };
+            SessionLogger.AddFaceBackendInfo(modelInfo, predictor);
 
             // Counted off the plan rather than from the constants, so these can never
             // disagree with the schedule that actually ran.
@@ -539,7 +558,7 @@ public class ProtocolRunner : MonoBehaviour
 
         // Read once, here, and never again. Everything downstream holds this object rather
         // than the component, so a checkbox toggled mid-session cannot reach the session.
-        // The library's "Use Calibration" checkbox decides whether this session calibrates.
+        // Whether this session calibrates was set by the condition, in Start.
         bool debug = calibrationDebugLogging && Debug.isDebugBuild;
         if (calibrationDebugLogging && !debug)
         {
@@ -550,7 +569,20 @@ public class ProtocolRunner : MonoBehaviour
 
         calibrationConfig = CalibrationSessionConfig.Lock(predictor.UseCalibration, debug);
 
-        Debug.Log($"{nameof(ProtocolRunner)}: calibration {calibrationConfig}");
+        Debug.Log($"{nameof(ProtocolRunner)}: {ConditionSetup.Label(predictor)}, " +
+                  $"calibration {calibrationConfig}");
+
+        // Can the chosen condition predict at all (Jev: key and connection)? Found out here, on
+        // the screen, before the player sits through a game of failed seconds. Nothing has been
+        // asked of the player yet and no session file exists.
+        Show($"{ConditionSetup.Label(predictor)}\n\n" +
+             (ConditionSetup.UsesJev(predictor) ? "Checking the Jev connection..." : "Starting..."));
+        var (ready, readyMessage) = await ConditionSetup.CheckReadyAsync(predictor);
+        if (!ready)
+        {
+            Abort(readyMessage, showReason: true);
+            return;
+        }
 
         if (!PrepareCalibration())
         {
@@ -642,6 +674,8 @@ public class ProtocolRunner : MonoBehaviour
 
         if (calibrationConfig.MovementEnabled)
         {
+            // The predictor collects the calibration from the ACTIVE backend: SparseVR's scores
+            // in condition 2, Jev's in condition 4 (one request per second).
             predictor.StartCalibration();
         }
 
@@ -701,10 +735,16 @@ public class ProtocolRunner : MonoBehaviour
         }
     }
 
-    private void Abort(string reason)
+    // `showReason` puts the reason on the headset screen as well as in the log. Used for the
+    // condition check (no Jev key, a rejected key, no connection): that happens before the
+    // player has been asked to do anything, and whoever is wearing or watching the headset needs
+    // to see it without opening `adb logcat`.
+    private void Abort(string reason, bool showReason = false)
     {
         Debug.LogError($"{nameof(ProtocolRunner)}: {reason}");
-        Show("Cannot start.\n\nPlease tell the researcher.");
+        Show(showReason
+            ? $"Cannot start.\n\n{reason}\n\nPlease tell the researcher."
+            : "Cannot start.\n\nPlease tell the researcher.");
         enabled = false;
     }
 
@@ -818,8 +858,12 @@ public class ProtocolRunner : MonoBehaviour
 
             // Calibration-block ticks stay out of the predictor's results file, as calibration
             // samples do everywhere; the detailed session log below still records every tick.
-            var prediction = await predictor.PredictDetailed(
+            // TryPredict rather than PredictDetailed: it also says why a second has no
+            // prediction (no face tracking, or the backend -- Jev -- failed), and that goes in
+            // the log. A failed second is never answered by another model.
+            var outcome = await predictor.TryPredict(
                 saveResult: trial.Role != BlockRole.Calibration);
+            FacePrediction? prediction = outcome.PredictionOrNull;
 
             NearestCentroid? calibrated = null;
 
@@ -847,7 +891,7 @@ public class ProtocolRunner : MonoBehaviour
             // Logged whether or not tracking held, so a dropout is visible in the file
             // rather than showing up as a missing row.
             sessionLogger?.LogPrediction(trial.TrialId, trial.Role, trial.RepeatIndex,
-                                         trial.Emotion, i, prediction, calibrated);
+                                         trial.Emotion, i, prediction, calibrated, outcome.Error);
 
             LogCalibrationDebug(trial, i, prediction, calibrated);
 

@@ -94,10 +94,14 @@ def _print_overview(report: dict) -> None:
     schema = report["schema"]
 
     print(rule("session"))
+    backend_errors = track.get("backend_error", 0)
     print(f"  ticks logged      {track['ticks']}  "
-          f"(tracked {track['ok']}, no_tracking {track['no_tracking']})")
+          f"(tracked {track['ok']}, no_tracking {track['no_tracking']}"
+          + (f", backend_error {backend_errors}" if backend_errors else "") + ")")
     print(f"  tracking rate     {pct(track['tracking_rate'])}")
-    print(f"  trials            {len(report['trials'])}")
+    left_out = report.get("scope", {}).get("calibration_block_trials_excluded", 0)
+    print(f"  trials            {len(report['trials']) + left_out}"
+          + (f"  ({len(report['trials'])} scored, {left_out} in the calibration block)" if left_out else ""))
     print(f"  duration          {num(time['duration_s'], 1)} s"
           f"   median tick {num(time['median_tick_s'], 2)} s"
           f"   slowest {num(time['max_tick_s'], 2)} s")
@@ -125,11 +129,24 @@ def _print_accuracy(report: dict, classes: list[str]) -> None:
     conf = report["confidence"]
     trial = acc["trial"]
 
+    scope = report.get("scope", {})
     print()
     print(rule("accuracy"))
+    if scope.get("calibration_block_ticks_excluded"):
+        print(f"  scored on         the test trials only: the calibration block "
+              f"({scope['calibration_block_trials_excluded']} trials, "
+              f"{scope['calibration_block_ticks_excluded']} ticks) is left out, "
+              f"because the calibration is fitted on it")
     print(f"  tick accuracy     {pct(acc['tick_accuracy'])}"
           f"   ({acc['ticks_correct']}/{acc['ticks_scored']} tracked ticks,"
           f" chance {pct(acc['chance_level'])})")
+    print(f"  macro-F1          {pct(acc.get('macro_f1'))}"
+          f"   ({acc.get('classes_scored')} classes; one with no true tick and no prediction is left out)")
+    window = acc.get("ticks_1_to_9")
+    if window:
+        print(f"  ticks 1-9 only    accuracy {pct(window['tick_accuracy'])}"
+              f"   macro-F1 {pct(window['macro_f1'])}"
+              f"   ({window['ticks_scored']} ticks; tick 0 is taken while the face is still changing)")
     print(f"  per trial         majority {pct(trial['majority'])}"
           f"   final tick {pct(trial['final'])}"
           f"   ever hit {pct(trial['any'])}   (n={trial['trials']})")
@@ -138,6 +155,15 @@ def _print_accuracy(report: dict, classes: list[str]) -> None:
           f"   when wrong {num(conf['mean_top_score_incorrect'])}")
     print(f"  mean score given to the prompted class: "
           f"{num(conf['mean_prompted_score'])}")
+
+    calibration = report.get("calibration")
+    if calibration:
+        model, calibrated = calibration["model_same_ticks"], calibration["calibrated"]
+        print()
+        print("  calibration (the headset's decision vs the model, on the same "
+              f"{calibration['ticks']} ticks)")
+        print(f"    model       accuracy {pct(model['accuracy'])}   macro-F1 {pct(model['macro_f1'])}")
+        print(f"    calibrated  accuracy {pct(calibrated['accuracy'])}   macro-F1 {pct(calibrated['macro_f1'])}")
 
     print()
     print("  by prompted emotion")

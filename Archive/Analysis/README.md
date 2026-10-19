@@ -15,6 +15,9 @@ your laptop after a play session:
 
 - `pull_sessions.py` — copies new recordings off the headset
 - `analyze_sessions.py` — turns them into the report
+- `score_conditions.py` — accuracy and macro-F1 for each of the four conditions (SparseVR or
+  Jev, calibration off or on), pooled by condition; see
+  [Comparing the four conditions](#comparing-the-four-conditions)
 - `block_effect.py` — splits a `session-local-v1` recording into its calibration and
   evaluation blocks and compares them, which says whether the calibration study can be
   read on that recording at all; see [Block effect](#block-effect)
@@ -158,6 +161,9 @@ Useful flags:
 **session** — how many prediction ticks were logged and how many of them had a tracked
 face. `no_tracking` rows are logged rather than dropped, so a low tracking rate is a real
 finding: the headset lost the face, and the accuracy below is measured on whatever is left.
+Since the four conditions, a tick can also be `backend_error`: the model itself failed (for Jev:
+no connection, a rejected key). Those are counted separately from `no_tracking`, shown only when
+there are some, and scored like lost tracking (not at all). `error_code` in the CSV says why.
 `frames per tick` comes from the `generation` counter, which counts valid frames pushed into
 the model's ring buffer. A step much shorter than the session's own median means frames were
 dropped between predictions; a repeated window means the same five frames were predicted
@@ -175,6 +181,20 @@ twice.
 
 Both are printed against *chance*, which is 14.3% for seven classes. Anything near that is
 not evidence of anything.
+
+*macro-F1* is the unweighted mean of the per-class F1 scores, computed as everywhere in this
+folder (a class with no true tick and no prediction is left out of the mean, and `classes` says
+how many it covers). A second line, *ticks 1-9 only*, gives accuracy and macro-F1 without tick 0,
+the number that matches the trial votes, `runtime_calibration_report.py` and `score_conditions.py`.
+
+In a **calibrated study session** the accuracy, F1, confusion matrix and trial table are computed
+on the test trials only. The calibration block (7 trials) is left out, because the calibration is
+fitted on it and scoring it would score the model on its own training data; the report says how
+many trials and ticks were left out. Sessions without a calibration block (the game, an
+uncalibrated study session, older recordings) are scored whole, exactly as before. Tracking,
+timing and action-unit figures always cover the whole recording. When the file holds the headset's
+calibrated decisions, a short *calibration* block compares them with the model on the very same
+ticks. For the four conditions side by side, use `score_conditions.py`.
 
 *confidence* is the model's top score. If it is high when the model is wrong, the model is
 confidently wrong, which is a different problem from an uncertain one.
@@ -210,6 +230,53 @@ large flat count is expected — the headset does not report every channel — b
 goes flat *between* sessions is a tracking problem worth chasing. Measured on the newest frame
 of each window only: consecutive windows overlap by four frames, so pooling all five would
 count most samples several times over.
+
+## Comparing the four conditions
+
+```bash
+python Analysis/score_conditions.py ~/sessions                # accuracy and macro-F1 per condition
+python Analysis/score_conditions.py ~/sessions --per-class --per-session
+python Analysis/score_conditions.py ~/sessions --json scores.json --csv scores.csv
+python Analysis/score_conditions.py ~/sessions --ticks all    # include tick 0
+```
+
+Each session records its condition in `session_metadata.json` (`models.condition`:
+`sparsevr_nocal`, `sparsevr_cal`, `jev_nocal`, `jev_cal`). This script groups the sessions by
+condition, program (study or game) and protocol version, and prints one line per group. Like the rest of
+this folder it needs only the standard library.
+
+What it scores, and why:
+
+- **The label is the prompt.** `prompted_emotion` is what the player was asked to act, not an
+  independently verified emotion, so these numbers measure agreement with the prompt.
+- **The prediction is `predicted_emotion`**, the model's own answer: SparseVR's or Jev's, as
+  `backend_id` says.
+- **Test ticks only.** The study's calibration block is left out, because the calibration is fitted
+  on it. Ticks 1 to 9 of each trial count, as in the trial votes and in
+  `runtime_calibration_report.py`; tick 0 is taken while the face is still changing.
+- **Unanswered ticks** (`no_tracking`, `backend_error`) are not scored but are counted. `cover` is the
+  share answered, `acc` is the accuracy on answered ticks and `acc*` counts every unanswered tick as wrong.
+  Report both for Jev: a run that lost half its requests is not a good run.
+- **Macro-F1** is `session_analysis.macro_f1`, the definition used throughout this folder: a class with
+  no true tick and no prediction is left out of the mean. The game never prompts Neutral, so its mean covers
+  6 classes, or 7 if the model ever says Neutral (which then scores F1 0). `classes` shows which.
+- **The calibration table** compares `calibrated_predicted_emotion` with the model on the very same ticks,
+  so the difference is the calibration alone. Both programs write that column: the study for its test
+  block, the game on every tick of a calibrated condition (blank when calibration is off or was skipped).
+  `predicted_emotion` is always the model's own answer. A game file recorded before the four conditions has
+  no such column, and the script says so.
+
+It agrees with `runtime_calibration_report.py` on a calibrated study session (same ticks, same
+accuracy and macro-F1); that tool goes deeper on one session (per-trial changes, `--verify`), this one
+puts the four conditions side by side. The columns of every file are in
+[`Docs/OUTPUT_FILE_FORMATS.md`](../../Docs/OUTPUT_FILE_FORMATS.md).
+
+### Tests
+
+```bash
+python Analysis/test_score_conditions.py          # 21
+python Analysis/test_analyze_sessions.py          # 15: the report's calibration-block, F1 and backend_error handling
+```
 
 ## Block effect
 

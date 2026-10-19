@@ -122,6 +122,10 @@ __pycache__/
 # The archived copies of the notebooks too: kept locally, not tracked (since 2026-10-19).
 /Archive/notebooks/
 
+# The Typesafe (Jev) API key file: paste your key into it, build, never commit it.
+/Assets/Resources/jev_api_key.txt
+/Assets/Resources/jev_api_key.txt.meta
+
 # Results copied from the headset (VR Emotion > Get Results From Headset): real people, never commit.
 /HeadsetResults/
 

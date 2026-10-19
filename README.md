@@ -5,9 +5,9 @@ model and its optional per-player calibration come from the
 [VREmotionDetection](https://github.com/vcu-swim-lab/VREmotionDetection) library (version
 3.0.0); this project runs the sessions around it.
 
-The game uses the library's on-device model, so nothing leaves the headset. The library's other
-prediction option, Jev (an online service by Typesafe), is switched on only from code and is not
-used here.
+Each game runs one of four **conditions**: the library's on-device model (SparseVR) or Jev, an
+online model by Typesafe, each with or without calibration (see *Conditions*). The default,
+condition 1, uses the on-device model without calibration, so nothing leaves the headset.
 
 
 ## 📋 Prerequisites
@@ -37,14 +37,15 @@ each of the seven emotions and sees what the system predicted.
 The screen is placed in front of the player's gaze when the game starts, and again when the
 player recenters the headset. Its distance is the Canvas's Pos Z in the scene.
 
-**Use Calibration on — two parts:**
+**With calibration (conditions 2 and 4) — two parts:**
 
 1. **Part 1: Calibration** — 7 trials, one per emotion, shown as "Calibration 3 of 7". The
    system learns how this player makes each expression. No result is shown.
 2. **Part 2** — 7 trials, one per emotion in a new random order, shown as "Trial 5 of 7", each
    followed by its result.
 
-**Use Calibration off — one part:** Part 1 is skipped, and the results are the model's own.
+**Without calibration (conditions 1 and 3) — one part:** Part 1 is skipped, and the results are
+the model's own.
 
 Each trial:
 
@@ -70,11 +71,41 @@ were removed on 2026-10-19; both are in git history, and their recordings are ne
 `demo-v2` ones.
 
 
+## 🧪 Conditions
+
+| # | Model | Calibration | Needs |
+|---|---|---|---|
+| 1 (default) | SparseVR, on the headset | off | — |
+| 2 | SparseVR | on (Part 1) | — |
+| 3 | Jev, Typesafe's online model | off | internet and a Typesafe key |
+| 4 | Jev | on (Part 1) | internet and a Typesafe key |
+
+**Choosing one:** pick the **Condition** in the Protocol Runner's Inspector, then Build and Run.
+The condition also sets the New Face Au Model's **Use Calibration** when the game starts, so change
+the Condition, not that checkbox. Commit the scene only with condition 1.
+
+**The Jev key (conditions 3 and 4):** create `Assets/Resources/jev_api_key.txt` with your Typesafe
+key on its first line. The file is git-ignored; never commit it. It is built into the app, so
+anyone holding the APK could read it: use a key you can revoke, and keep the APK on the lab's
+headsets. In the Editor, the `TYPESAFE_API_KEY` environment variable works too.
+
+**At start** the game checks the condition. With Jev it sends one test request; if there is no key,
+the key is rejected, or there is no connection, the headset shows **"Cannot start."** with the
+reason and no session folder is created. During the game a failed Jev second is logged as
+`backend_error`; the on-device model is never used in its place.
+
+Every recording names its condition (`models.condition` in `session_metadata.json`), so an analysis
+must filter on it. Step-by-step headset checks: [Docs/CONDITION_TEST_CHECKLIST.md](Docs/CONDITION_TEST_CHECKLIST.md).
+What each file holds: [Docs/OUTPUT_FILE_FORMATS.md](Docs/OUTPUT_FILE_FORMATS.md). Comparing the
+four conditions: `python Archive/Analysis/score_conditions.py HeadsetResults/sessions`.
+
+
 ## ⚙️ Settings
 
 | Setting | Where (Inspector) | Default | What it does |
 |---|---|---|---|
-| **Use Calibration** | `New Face Au Model` | Off | Adds Part 1 and adapts the predictions to each player (movement calibration). Off: the model's own answer is used everywhere |
+| **Condition** | `Protocol Runner` | 1: SparseVR, no calibration | Which model predicts and whether Part 1 (calibration) runs; see *Conditions* |
+| Use Calibration | `New Face Au Model` | Off | Set by the Condition when the game starts; leave it off in the scene |
 | **Save Results** | `New Face Au Model` | On | Saves every prediction to a results file on the headset (see *Results*) |
 | **Face Model** | `New Face Au Model` | the acted-data model | The emotion model; leave it as it is |
 | Intro / Part / Reading / Circle Countdown Seconds | `Protocol Runner` | 10 / 6 / 5 / 5 s | The start screen, the part screens, the reading time before the circle countdown, and the countdown itself |
@@ -145,25 +176,34 @@ The results describe real people's faces. These folders are ignored by git and m
 committed: `HeadsetResults/`, `Logs/`, `Analysis/` (scripts and participant data) and
 `notebooks/`. A player's calibration is kept only for the running game.
 
+In conditions 3 and 4 a description of the player's face movements is sent to Typesafe's Jev
+service every second; the player must agree to that before playing. Conditions 1 and 2 send
+nothing off the headset.
+
 
 ## 🗂️ Repository layout
 
 | Folder | Contents |
 |---|---|
-| `Assets/Scripts/` | `ProtocolRunner` (the game), `GameScreen` (its trial screens), `FaceTrackingRecorder` (the face file), `SessionLogger` (detailed logs), `Calibration/` (session settings and trial voting) |
+| `Assets/Scripts/` | `ProtocolRunner` (the game), `GameScreen` (its trial screens), `FaceTrackingRecorder` (the face file), `SessionLogger` (detailed logs), `Conditions/ConditionSetup` (the four conditions and the Jev check), `Calibration/` (session settings, trial voting, condition names) |
 | `Assets/Editor/` | Menu **VR Emotion > Get Sessions From Headset** |
 | `Assets/DemoReplay/` | Avatar replay: the CSV face player, the exact 1:1 face mapping, and the **Avatar Replay** menu (Editor only) |
 | `Tools/` | `add_avatar_to_video.py`: puts the avatar into the OBS recording |
-| `Assets/Tests/EditMode/` | Tests: calibration math, parity with the Python analysis, scene setup |
+| `Assets/Tests/EditMode/` | Tests: calibration math, parity with the Python analysis, condition names, scene setup |
 | `Assets/Scenes/Main.unity` | The scene |
-| `Docs/` | Study protocol and reports |
-| `Archive/` | A snapshot of the offline analysis scripts and reports, without data or notebooks |
+| `Assets/Samples/` | Meta's sample content: Movement SDK face samples (Lina, Aura), Interaction SDK and Recorder samples. The Body Tracking Samples (HighFidelity, for the avatar replay) are imported locally, not committed |
+| `Packages/` | `manifest.json` and `packages-lock.json`: which VREmotionDetection version the game uses |
+| `Docs/` | Condition test checklist, output file formats, the retired study protocol, reports on past recordings, student tasks |
+| `Archive/` | A snapshot of the offline analysis scripts and reports, without data or notebooks; `Archive/Analysis/score_conditions.py` compares the four conditions |
 
 
 ## ✅ Tests
 
 In Unity: **Window > General > Test Runner > EditMode > Run All**. The scene tests expect the
 committed scene to have **Use Calibration** off; untick it before committing the scene.
+
+The analysis scripts have their own tests: `python -m unittest test_score_conditions
+test_analyze_sessions`, run inside `Archive/Analysis/`.
 
 
 ## 📝 License

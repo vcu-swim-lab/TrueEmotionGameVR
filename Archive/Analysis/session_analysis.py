@@ -32,6 +32,10 @@ from typing import Iterable, Sequence
 STATUS_OK = "ok"
 STATUS_NO_TRACKING = "no_tracking"
 
+# The model itself failed (Jev unreachable, key rejected ...), as opposed to the headset not
+# delivering a face. Written by SessionLogger.cs since the four conditions; `error_code` says why.
+STATUS_BACKEND_ERROR = "backend_error"
+
 # Canonical `block_role` values, matching the literals SessionLogger.cs writes.
 ROLE_CALIBRATION = "calibration"
 ROLE_EVALUATION = "evaluation"
@@ -96,6 +100,12 @@ class Row:
     block_role: str | None = None    # "calibration" | "evaluation"
     repeat_index: int | None = None  # 1-based presentation of this state in its block
 
+    # Written since the four conditions (SparseVR/Jev x calibration off/on); older files have neither,
+    # and they read as None. `calibrated` is the study's calibrated decision for the tick, blank
+    # elsewhere; `error_code` names the library's PredictionErrorCode when the tick failed.
+    calibrated: str | None = None
+    error_code: str | None = None
+
     @property
     def ok(self) -> bool:
         return self.status == STATUS_OK
@@ -128,6 +138,19 @@ class Session:
     @property
     def row_spans(self) -> list[tuple[int, int]]:
         return self.spans or [(0, len(self.rows))]
+
+    def without_calibration_block(self) -> "Session":
+        """The same session minus the study's calibration block, or `self` if it has none.
+
+        The calibration is fitted on that block, so scoring it scores the model on its own
+        training data. Accuracy, F1 and the confusion matrix are therefore computed on the rest;
+        timing, tracking and action-unit figures still describe the whole recording.
+        """
+        kept = [r for r in self.rows if r.block_role != ROLE_CALIBRATION]
+        if len(kept) == len(self.rows):
+            return self
+        return Session(path=self.path, session_id=self.session_id, schema=self.schema, rows=kept,
+                       metadata=self.metadata, warnings=list(self.warnings))
 
 
 # --------------------------------------------------------------------------- loading
@@ -467,6 +490,8 @@ def load_session(path: str | Path) -> Session:
                 generation=_to_int(raw.get("generation")),
                 scores=scores,
                 frames=frames,
+                calibrated=(raw.get("calibrated_predicted_emotion") or "").strip() or None,
+                error_code=(raw.get("error_code") or "").strip() or None,
             )
             if row.ok and row.logged_correct != row.correct:
                 mismatched += 1
@@ -484,7 +509,7 @@ def load_session(path: str | Path) -> Session:
             f"file mixes {len(session_ids)} session ids; metrics are pooled across them"
         )
 
-    unknown = {r.status for r in rows} - {STATUS_OK, STATUS_NO_TRACKING, ""}
+    unknown = {r.status for r in rows} - {STATUS_OK, STATUS_NO_TRACKING, STATUS_BACKEND_ERROR, ""}
     if unknown:
         warnings.append(f"unrecognised status value(s): {', '.join(sorted(unknown))}")
 
@@ -599,6 +624,7 @@ def tracking(session: Session) -> dict:
         "ticks": total,
         "ok": ok,
         "no_tracking": sum(1 for r in session.rows if r.status == STATUS_NO_TRACKING),
+        "backend_error": sum(1 for r in session.rows if r.status == STATUS_BACKEND_ERROR),
         "tracking_rate": _rate(ok, total),
     }
 
@@ -900,12 +926,63 @@ def action_units(session: Session) -> dict:
     }
 
 
-def analyse(session: Session) -> dict:
-    """Everything above, in one JSON-serialisable dictionary."""
-    summaries = trials(session)
-    ok = session.ok_rows
+def _scores_of_rows(rows: Sequence[Row], classes: Sequence[str]) -> dict:
+    """Tick accuracy and macro-F1 of the model's own answers over `rows` (tracked ticks only)."""
+    ok = [r for r in rows if r.ok]
+    f1 = macro_f1([r.prompted for r in ok], [r.predicted for r in ok], list(classes))
     correct = sum(1 for r in ok if r.correct)
-    classes = session.schema.classes
+    return {
+        "ticks_scored": len(ok),
+        "ticks_correct": correct,
+        "tick_accuracy": _rate(correct, len(ok)),
+        "macro_f1": f1["macro_f1"],
+        "classes_scored": f1["classes_scored"],
+    }
+
+
+def calibration_comparison(session: Session) -> dict | None:
+    """The calibrated decision against the model's own answer, on the ticks that have a decision.
+
+    Both are scored on exactly the same ticks, so the difference is the calibration alone. None when
+    the file has no calibrated decisions (conditions without calibration, the game, older files).
+    """
+    classes = list(session.schema.classes)
+    # Ticks 1 to 9, as the trial votes use. The study never decides on tick 0; the game does, so the
+    # filter is what keeps the two programs comparable.
+    both = [r for r in session.ok_rows
+            if r.calibrated and (r.prediction_index is None or r.prediction_index >= 1)]
+    if not both:
+        return None
+
+    truth = [r.prompted for r in both]
+    result = {"ticks": len(both)}
+    for name, predicted in (("model_same_ticks", [r.predicted for r in both]),
+                            ("calibrated", [r.calibrated for r in both])):
+        correct = sum(1 for t, p in zip(truth, predicted) if t == p)
+        f1 = macro_f1(truth, predicted, classes)
+        result[name] = {"accuracy": _rate(correct, len(both)), "macro_f1": f1["macro_f1"],
+                        "classes_scored": f1["classes_scored"]}
+    return result
+
+
+def analyse(session: Session) -> dict:
+    """Everything above, in one JSON-serialisable dictionary.
+
+    Accuracy-type figures (accuracy, F1, confusion, per-trial and per-tick results) are computed on
+    the test ticks: the study's calibration block is left out, because the calibration is fitted on it.
+    Sessions without a calibration block (the game, uncalibrated study sessions, older recordings) are
+    scored whole, exactly as before. Tracking, timing and action-unit figures cover the whole recording.
+    """
+    scored = session.without_calibration_block()
+    summaries = trials(scored)
+    ok = scored.ok_rows
+    correct = sum(1 for r in ok if r.correct)
+    classes = scored.schema.classes
+    f1 = macro_f1([r.prompted for r in ok], [r.predicted for r in ok], list(classes))
+
+    left_out = [r for r in session.rows if r.block_role == ROLE_CALIBRATION]
+    ticks_1_to_9 = _scores_of_rows(
+        [r for r in scored.rows if r.prediction_index is not None and 1 <= r.prediction_index <= 9], classes)
 
     return {
         "file": str(session.path),
@@ -916,6 +993,10 @@ def analyse(session: Session) -> dict:
             "features_per_frame": session.schema.features_per_frame,
         },
         "models": (session.metadata or {}).get("models"),
+        "scope": {
+            "calibration_block_ticks_excluded": len(left_out),
+            "calibration_block_trials_excluded": len({r.trial_id for r in left_out if r.trial_id is not None}),
+        },
         "tracking": tracking(session),
         "timing": timing(session),
         "generation": generation_health(session),
@@ -924,14 +1005,18 @@ def analyse(session: Session) -> dict:
             "ticks_correct": correct,
             "tick_accuracy": _rate(correct, len(ok)),
             "chance_level": 1 / len(classes) if classes else None,
+            "macro_f1": f1["macro_f1"],
+            "classes_scored": f1["classes_scored"],
+            "ticks_1_to_9": ticks_1_to_9,
             "trial": trial_accuracy(summaries),
         },
-        "confidence": confidence(session),
-        "class_means": class_means(session),
-        "per_prompted": per_prompted(session),
-        "per_predicted": per_predicted(session),
-        "confusion": confusion(session),
-        "tick_curve": tick_curve(session),
+        "calibration": calibration_comparison(scored),
+        "confidence": confidence(scored),
+        "class_means": class_means(scored),
+        "per_prompted": per_prompted(scored),
+        "per_predicted": per_predicted(scored),
+        "confusion": confusion(scored),
+        "tick_curve": tick_curve(scored),
         "action_units": action_units(session),
         "trials": summaries,
         "warnings": list(session.warnings),
@@ -981,6 +1066,10 @@ def pool(sessions: Sequence[Session]) -> Session:
                     generation=row.generation,
                     scores=row.scores,
                     frames=row.frames,
+                    block_role=row.block_role,
+                    repeat_index=row.repeat_index,
+                    calibrated=row.calibrated,
+                    error_code=row.error_code,
                 )
             )
         spans.append((span_start, len(rows)))

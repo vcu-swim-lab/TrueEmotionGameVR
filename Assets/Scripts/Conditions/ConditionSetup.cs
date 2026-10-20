@@ -2,10 +2,10 @@ using System;
 using System.Diagnostics;
 using System.Globalization;
 using UnityEngine;
-using VcuSwimLab.Backends;
-using VcuSwimLab.Backends.Jev;
-using VcuSwimLab.Calibration;
-using VcuSwimLab.VREmotionDetection;
+using VcuSeCenter.Backends;
+using VcuSeCenter.Backends.Jev;
+using VcuSeCenter.Calibration;
+using VcuSeCenter.VREmotionDetection;
 
 using Debug = UnityEngine.Debug;
 
@@ -50,7 +50,7 @@ public static class ConditionSetup
     // THE one line to edit to change what the next build runs. Read by ProtocolRunner.Start and
     // by nothing else, and deliberately not an Inspector field: a serialized value is stored in
     // the scene, where it silently wins over the code and survives edits to this file.
-    public const GameCondition Selected = GameCondition.JevCalibration;
+    public const GameCondition Selected = GameCondition.JevNoCalibration;
 
     // ---- Jev settings (conditions 3 and 4) --------------------------------------------------
     // The library defaults are 10 s and 2 retries, which is about 31 s for a prediction that

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 
-namespace VcuSwimLab.Calibration
+namespace VcuSeCenter.Calibration
 {
     /// <summary>Thrown when a document is not the JSON this reader accepts.</summary>
     public sealed class JsonParseException : Exception

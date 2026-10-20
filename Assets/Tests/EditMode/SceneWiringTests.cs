@@ -6,7 +6,7 @@ using System.Text.RegularExpressions;
 
 using NUnit.Framework;
 
-namespace VcuSwimLab.Calibration.Tests
+namespace VcuSeCenter.Calibration.Tests
 {
     /// <summary>
     /// Checks that the scene actually carries the components the runtime assumes.

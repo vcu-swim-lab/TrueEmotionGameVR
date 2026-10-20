@@ -6,9 +6,9 @@ using System.Text;
 
 using UnityEngine;
 
-using VcuSwimLab.Backends;
-using VcuSwimLab.Calibration;
-using VcuSwimLab.VREmotionDetection;
+using VcuSeCenter.Backends;
+using VcuSeCenter.Calibration;
+using VcuSeCenter.VREmotionDetection;
 
 // Writes one self-contained CSV row per face prediction, plus a metadata sidecar
 // describing the session.

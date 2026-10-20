@@ -2,7 +2,7 @@ using System;
 
 using NUnit.Framework;
 
-namespace VcuSwimLab.Calibration.Tests
+namespace VcuSeCenter.Calibration.Tests
 {
     public class PersonalCentroidBuilderTests
     {

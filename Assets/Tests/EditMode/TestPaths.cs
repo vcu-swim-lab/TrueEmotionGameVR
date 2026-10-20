@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using System.Reflection;
 
-namespace VcuSwimLab.Calibration.Tests
+namespace VcuSeCenter.Calibration.Tests
 {
     /// <summary>
     /// Locates repository files from a test, in Unity and outside it.

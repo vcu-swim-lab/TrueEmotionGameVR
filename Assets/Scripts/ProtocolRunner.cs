@@ -7,8 +7,8 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.Serialization;
 
-using VcuSwimLab.Calibration;
-using VcuSwimLab.VREmotionDetection;
+using VcuSeCenter.Calibration;
+using VcuSeCenter.VREmotionDetection;
 
 using Random = System.Random;
 

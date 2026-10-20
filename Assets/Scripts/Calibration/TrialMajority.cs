@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace VcuSwimLab.Calibration
+namespace VcuSeCenter.Calibration
 {
     /// <summary>One tick's contribution to a trial vote.</summary>
     public readonly struct TickVote

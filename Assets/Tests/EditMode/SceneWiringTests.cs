@@ -6,7 +6,7 @@ using System.Text.RegularExpressions;
 
 using NUnit.Framework;
 
-namespace VcuSwimLab.Calibration.Tests
+namespace VcuSeCenter.Calibration.Tests
 {
     /// <summary>
     /// Checks that the scene actually carries the components the runtime assumes.
@@ -162,6 +162,21 @@ namespace VcuSwimLab.Calibration.Tests
             Assert.AreEqual(1, runners.Count,
                             $"expected exactly one ProtocolRunner in {ScenePath}");
             Assert.IsNotNull(runners[0].GameObjectId, "the ProtocolRunner has no host GameObject");
+        }
+
+        [Test]
+        public void The_scene_does_not_choose_the_condition()
+        {
+            var runner = With(ScriptGuid(ProtocolRunnerScript)).Single();
+
+            // The condition is ConditionSetup.Selected, in code. A serialized `condition` on the
+            // ProtocolRunner would be stored here, win over the code, and survive edits to
+            // ConditionSetup.cs -- the next build would quietly run an older condition. If a
+            // field with this name comes back, it is a second source of truth: remove it.
+            Assert.IsFalse(runner.Fields.ContainsKey("condition"),
+                           "the ProtocolRunner in the scene stores a 'condition'; the condition "
+                           + "is chosen only by ConditionSetup.Selected, so this value would "
+                           + "override it. Delete the field instead of setting it");
         }
 
         [Test]

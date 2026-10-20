@@ -1,4 +1,4 @@
-namespace VcuSwimLab.Calibration
+namespace VcuSeCenter.Calibration
 {
     /// <summary>
     /// The names of the four experiment conditions: which backend predicts (SparseVR or Jev)

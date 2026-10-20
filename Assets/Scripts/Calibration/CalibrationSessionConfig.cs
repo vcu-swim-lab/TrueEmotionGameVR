@@ -1,4 +1,4 @@
-namespace VcuSwimLab.Calibration
+namespace VcuSeCenter.Calibration
 {
     /// <summary>
     /// The calibration settings a session actually ran under, captured once and immutable

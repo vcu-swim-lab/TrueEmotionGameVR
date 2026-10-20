@@ -75,14 +75,16 @@ were removed on 2026-10-19; both are in git history, and their recordings are ne
 
 | # | Model | Calibration | Needs |
 |---|---|---|---|
-| 1 (default) | SparseVR, on the headset | off | — |
+| 1 | SparseVR, on the headset | off | — |
 | 2 | SparseVR | on (Part 1) | — |
 | 3 | Jev, Typesafe's online model | off | internet and a Typesafe key |
 | 4 | Jev | on (Part 1) | internet and a Typesafe key |
 
-**Choosing one:** pick the **Condition** in the Protocol Runner's Inspector, then Build and Run.
-The condition also sets the New Face Au Model's **Use Calibration** when the game starts, so change
-the Condition, not that checkbox. Commit the scene only with condition 1.
+**Choosing one:** edit `Selected` in `Assets/Scripts/Conditions/ConditionSetup.cs`
+(`public const GameCondition Selected = ...`), let Unity recompile, then Build and Run. It is the only
+place the condition is chosen; there is no Inspector field and the scene holds no value. The condition
+also sets the New Face Au Model's **Use Calibration** when the game starts, so change the condition,
+not that checkbox. The headset shows "Condition N: ..." for 3 s at the start: check it matches.
 
 **The Jev key (conditions 3 and 4):** create `Assets/Resources/jev_api_key.txt` with your Typesafe
 key on its first line. The file is git-ignored; never commit it. It is built into the app, so

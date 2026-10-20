@@ -2,7 +2,7 @@ using System.Collections.Generic;
 
 using NUnit.Framework;
 
-namespace VcuSwimLab.Calibration.Tests
+namespace VcuSeCenter.Calibration.Tests
 {
     /// <summary>
     /// Holds the C# runtime to the Python offline implementation, value for value.

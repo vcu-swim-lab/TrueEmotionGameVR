@@ -1,11 +1,11 @@
 {
-    "name": "VcuSwimLab.Calibration.EditModeTests",
-    "rootNamespace": "VcuSwimLab.Calibration.Tests",
+    "name": "VcuSeCenter.Calibration.EditModeTests",
+    "rootNamespace": "VcuSeCenter.Calibration.Tests",
     "references": [
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner",
-        "VcuSwimLab.Calibration",
-        "VcuSwimLab.Calibration.Protocol"
+        "VcuSeCenter.Calibration",
+        "VcuSeCenter.Calibration.Protocol"
     ],
     "includePlatforms": [
         "Editor"

@@ -22,11 +22,13 @@ One condition per build. Test them in order 1 → 4; each needs one Build and Ru
 
 ## Choosing the condition
 
-Select the object with the **Protocol Runner** in `Main.unity` and pick the **Condition** in its
-Inspector (1 to 4). Save the scene, then **Build and Run**.
+Edit `Selected` in `Assets/Scripts/Conditions/ConditionSetup.cs` (`GameCondition.SparseVrNoCalibration`,
+`SparseVrCalibration`, `JevNoCalibration` or `JevCalibration` = conditions 1 to 4). Wait until Unity has
+recompiled with no errors, then **Build and Run**. That line is the only place the condition is chosen:
+there is no Inspector field and the scene holds no condition.
 
-The condition also switches the predictor's **Use Calibration** when the game starts, so change the
-Condition, not that checkbox. Commit the scene only with condition 1 (the default).
+The condition also switches the predictor's **Use Calibration** when the game starts, so change
+`Selected`, not that checkbox.
 
 ## What to check, for every condition
 
@@ -38,7 +40,7 @@ lines with `200`, Jev is really being called. They never contain the key.
 
 | Step | You should see |
 |---|---|
-| Start | Screen: `Condition N: …` and `Starting...` (Jev: `Checking the Jev connection...`). Log: `[condition] Condition N: … \| backend=… \| calibration=on/off`; Jev also `Jev OK (… ms)` |
+| Start | Screen: `Condition N: …` and `Starting...` (Jev: `Checking the Jev connection...`), then `Condition N: …` and `Ready.` for 3 s. **N must be the condition you set in `Selected`.** Log: `[condition] Condition N: … \| backend=… \| calibration=on/off`; Jev also `Jev OK (… ms)` |
 | Part 1 (2, 4 only) | "Part 1: Calibration", then 7 trials: get ready with the circle, act for 10 s. No result screen. In condition 4 this sends about 70 Jev requests |
 | Part 2 | 7 trials: get ready (first trial only), act for 10 s, then "In this trial, your predicted emotion was …" and the circle countdown to the next |
 | End | "Demo complete. Thank you." and the Target / Predicted list |

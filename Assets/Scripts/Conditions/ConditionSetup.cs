@@ -12,17 +12,20 @@ using Debug = UnityEngine.Debug;
 // The four experiment conditions: which model predicts, crossed with whether the player's
 // calibration is used.
 //
-//   Condition 1   SparseVR (on the headset), calibration OFF     <- the committed default
+//   Condition 1   SparseVR (on the headset), calibration OFF
 //   Condition 2   SparseVR (on the headset), calibration ON
 //   Condition 3   Jev (Typesafe's cloud model), calibration OFF
 //   Condition 4   Jev (Typesafe's cloud model), calibration ON
 //
 // HOW TO CHOOSE ONE
-//   1. Select the object with the Protocol Runner, and pick the Condition in its Inspector.
-//   2. Build and Run on the headset.
+//   1. Change ConditionSetup.Selected, below, to the condition you want. It is the
+//      ONLY place the condition is chosen: no Inspector field, no scene value and no comment
+//      here can override or replace it, so what you read there is what the next build runs.
+//   2. Let Unity recompile, then Build and Run on the headset.
+//   The first screen names the condition that is really running; check it before the player starts.
 //   For conditions 3 and 4, paste your Typesafe key into Assets/Resources/jev_api_key.txt first.
-//   The condition also sets the predictor's "Use Calibration" when the game starts, so change the
-//   Condition, not that checkbox.
+//   The condition also sets the predictor's "Use Calibration" when the game starts, so change
+//   the condition, not that checkbox.
 //
 // THE PACKAGE DOES THE REAL WORK. This game only asks the VREmotionDetection library for three
 // things -- the model (UseLocalModel / UseJev), the calibration (UseCalibration, CalibrateEmotion,
@@ -43,6 +46,12 @@ public enum GameCondition
 
 public static class ConditionSetup
 {
+    // ---- The condition ----------------------------------------------------------------------
+    // THE one line to edit to change what the next build runs. Read by ProtocolRunner.Start and
+    // by nothing else, and deliberately not an Inspector field: a serialized value is stored in
+    // the scene, where it silently wins over the code and survives edits to this file.
+    public const GameCondition Selected = GameCondition.JevCalibration;
+
     // ---- Jev settings (conditions 3 and 4) --------------------------------------------------
     // The library defaults are 10 s and 2 retries, which is about 31 s for a prediction that
     // fails every time. A round asks once a second, so the game uses a shorter wait.

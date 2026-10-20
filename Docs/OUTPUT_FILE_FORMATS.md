@@ -1,6 +1,6 @@
 # What a game writes: the four conditions and their files
 
-Every game runs one condition, chosen in the Protocol Runner's Inspector (see `ConditionSetup.cs`):
+Every game runs one condition, chosen by `ConditionSetup.Selected` in `ConditionSetup.cs`:
 
 | # | Condition id | Model | Calibration |
 |---|---|---|---|

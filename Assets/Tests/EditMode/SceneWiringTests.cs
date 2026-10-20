@@ -165,6 +165,21 @@ namespace VcuSwimLab.Calibration.Tests
         }
 
         [Test]
+        public void The_scene_does_not_choose_the_condition()
+        {
+            var runner = With(ScriptGuid(ProtocolRunnerScript)).Single();
+
+            // The condition is ConditionSetup.Selected, in code. A serialized `condition` on the
+            // ProtocolRunner would be stored here, win over the code, and survive edits to
+            // ConditionSetup.cs -- the next build would quietly run an older condition. If a
+            // field with this name comes back, it is a second source of truth: remove it.
+            Assert.IsFalse(runner.Fields.ContainsKey("condition"),
+                           "the ProtocolRunner in the scene stores a 'condition'; the condition "
+                           + "is chosen only by ConditionSetup.Selected, so this value would "
+                           + "override it. Delete the field instead of setting it");
+        }
+
+        [Test]
         public void The_scene_s_predictor_has_calibration_off()
         {
             var predictors = With(NewFaceAuModelGuid);

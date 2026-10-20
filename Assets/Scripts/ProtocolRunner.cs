@@ -58,6 +58,9 @@ public class ProtocolRunner : MonoBehaviour
     public const int EvaluationPasses = 1;    // Part 2: 7 trials
     public const int TicksPerTrial = 10;
 
+    // How long "Condition N: ..." stays up once the condition is ready, before the session starts.
+    private const float ConditionScreenSeconds = 3f;
+
     // Text colours, on the emotion word only: the predicted emotion when it matches the acted
     // one and when it does not, and the next emotion. Grey for the trial counter.
     private const string CorrectColor = "#9BE15D";
@@ -69,12 +72,8 @@ public class ProtocolRunner : MonoBehaviour
     [Tooltip("The instruction text. Left empty, the object named 'Instruction' is used.")]
     [SerializeField] private TextMeshProUGUI instructionText;
 
-    [Header("Condition")]
-    [Tooltip("Which model predicts and whether the player calibrates. 1 and 2 use the on-device " +
-             "SparseVR model, 3 and 4 Typesafe's Jev (needs internet and the key in " +
-             "Assets/Resources/jev_api_key.txt). 2 and 4 add Part 1, calibration. This sets the " +
-             "New Face Au Model's Use Calibration when the game starts.")]
-    [SerializeField] private GameCondition condition = GameCondition.SparseVrNoCalibration;
+    // The condition (which model predicts, whether the player calibrates) is not set here: it is
+    // ConditionSetup.Selected, in code, so no scene value can disagree with it.
 
     [Header("Screen lengths (seconds)")]
     [Tooltip("The start screen.")]
@@ -108,7 +107,7 @@ public class ProtocolRunner : MonoBehaviour
     [SerializeField] private bool fastRehearsal = false;
 
     [Header("Calibration")]
-    [Tooltip("Whether the session calibrates is set by the Condition above (2 and 4 " +
+    [Tooltip("Whether the session calibrates is set by ConditionSetup.Selected (2 and 4 " +
              "calibrate, 1 and 3 do not). This one only writes each " +
              "evaluation tick's calibrated decision to the Unity console, readable over " +
              "`adb logcat`. Development builds only. Nothing is ever shown to the participant.")]
@@ -233,7 +232,7 @@ public class ProtocolRunner : MonoBehaviour
         // below is built: whether there is a Part 1 follows the predictor's Use Calibration.
         // A setup problem (no Jev key) is not thrown here; the readiness check in RunSession
         // shows it on the headset.
-        ConditionSetup.Configure(predictor, condition);
+        ConditionSetup.Configure(predictor, ConditionSetup.Selected);
 
         if (!CheckClassOrder())
         {
@@ -583,6 +582,11 @@ public class ProtocolRunner : MonoBehaviour
             Abort(readyMessage, showReason: true);
             return;
         }
+
+        // SparseVR is ready at once, which would leave the condition on screen for one frame.
+        // Held long enough to read, so whoever starts the build can see which condition it is.
+        Show($"{ConditionSetup.Label(predictor)}\n\nReady.");
+        await Awaitable.WaitForSecondsAsync(ConditionScreenSeconds);
 
         if (!PrepareCalibration())
         {
